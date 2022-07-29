@@ -214,6 +214,7 @@ dependencies = [
  "axum-server",
  "envy",
  "futures-util",
+ "json-patch",
  "k8s-openapi",
  "kube",
  "once_cell",

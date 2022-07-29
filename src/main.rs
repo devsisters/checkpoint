@@ -8,7 +8,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use futures_util::stream::StreamExt;
-use k8s_openapi::api::admissionregistration::v1::ValidatingWebhookConfiguration;
+use k8s_openapi::api::admissionregistration::v1::{
+    MutatingWebhookConfiguration, ValidatingWebhookConfiguration,
+};
 use kube::{api::Api, runtime::Controller};
 
 async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
@@ -52,6 +54,13 @@ async fn main() -> Result<()> {
 
     let axum_server_handle = axum_server::Handle::new();
     let shutdown_signal_fut = shutdown_signal(axum_server_handle.clone());
+    let (shutdown_signal_broadcast_tx, mut shutdown_signal_broadcast_rx1) =
+        tokio::sync::broadcast::channel::<()>(1);
+    let mut shutdown_signal_broadcast_rx2 = shutdown_signal_broadcast_tx.subscribe();
+    tokio::spawn(async move {
+        shutdown_signal_fut.await;
+        let _ = shutdown_signal_broadcast_tx.send(());
+    });
 
     let http_handle = tokio::spawn(
         axum_server::bind_rustls(crate::config::CONFIG.listen_addr.parse()?, tls_config)
@@ -59,15 +68,40 @@ async fn main() -> Result<()> {
             .serve(http_app.into_make_service()),
     );
 
-    let validatingrule_api = Api::<crate::types::ValidatingRule>::all(client.clone());
+    let vr_api = Api::<crate::types::ValidatingRule>::all(client.clone());
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
+    let mr_api = Api::<crate::types::MutatingRule>::all(client.clone());
+    let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
-    let validatingrule_controller_handle = tokio::spawn(
-        Controller::new(validatingrule_api, Default::default())
+    let vr_controller_handle = tokio::spawn(
+        Controller::new(vr_api, Default::default())
             .owns(vwc_api, Default::default())
-            .graceful_shutdown_on(shutdown_signal_fut)
+            .graceful_shutdown_on(async move {
+                let _ = shutdown_signal_broadcast_rx1.recv().await;
+            })
             .run(
-                crate::reconcile::reconcile,
+                crate::reconcile::reconcile_validatingrule,
+                crate::reconcile::error_policy,
+                Arc::new(crate::reconcile::Data {
+                    client: client.clone(),
+                }),
+            )
+            .for_each(|res| async move {
+                match res {
+                    Ok(object) => tracing::info!(?object, "reconciled"),
+                    Err(error) => tracing::error!(%error, "reconcile failed"),
+                }
+            }),
+    );
+
+    let mr_controller_handle = tokio::spawn(
+        Controller::new(mr_api, Default::default())
+            .owns(mwc_api, Default::default())
+            .graceful_shutdown_on(async move {
+                let _ = shutdown_signal_broadcast_rx2.recv().await;
+            })
+            .run(
+                crate::reconcile::reconcile_mutatingrule,
                 crate::reconcile::error_policy,
                 Arc::new(crate::reconcile::Data { client }),
             )
@@ -79,7 +113,7 @@ async fn main() -> Result<()> {
             }),
     );
 
-    let (res, ()) = tokio::try_join!(http_handle, validatingrule_controller_handle)?;
+    let (res, (), ()) = tokio::try_join!(http_handle, vr_controller_handle, mr_controller_handle)?;
     res?;
 
     Ok(())

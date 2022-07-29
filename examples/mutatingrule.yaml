@@ -1,0 +1,15 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: MutatingRule
+metadata:
+  name: mutate-namespace-name-cute
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["namespaces"]
+    operations: ["CREATE"]
+  code: |
+    if request.name:sub(-4) ~= "-uwu" then
+      new_name = request.name .. "-uwu"
+      patch = {{op="replace", path="/metadata/name", value=new_name}}
+    end

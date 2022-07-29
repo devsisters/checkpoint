@@ -8,5 +8,9 @@ fn main() {
     println!(
         "{}",
         serde_yaml::to_string(&types::ValidatingRule::crd()).unwrap()
-    )
+    );
+    println!(
+        "{}",
+        serde_yaml::to_string(&types::MutatingRule::crd()).unwrap()
+    );
 }

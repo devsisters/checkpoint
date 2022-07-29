@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::admissionregistration::v1::{
-    ServiceReference, ValidatingWebhook, ValidatingWebhookConfiguration, WebhookClientConfig,
+    MutatingWebhook, MutatingWebhookConfiguration, ServiceReference, ValidatingWebhook,
+    ValidatingWebhookConfiguration, WebhookClientConfig,
 };
 use kube::{
     api::{ObjectMeta, Patch, PatchParams},
@@ -11,7 +12,10 @@ use kube::{
 };
 use thiserror::Error;
 
-use crate::{config::CONFIG, types::ValidatingRule};
+use crate::{
+    config::CONFIG,
+    types::{MutatingRule, ValidatingRule},
+};
 
 pub struct Data {
     pub client: kube::Client,
@@ -23,9 +27,11 @@ pub enum Error {
     MissingObjectKey(&'static str),
     #[error("Failed to create ValidatingWebhookConfiguration: {0}")]
     ValidatingWebhookConfigurationCreationFailed(#[source] kube::Error),
+    #[error("Failed to create MutatingWebhookConfiguration: {0}")]
+    MutatingWebhookConfigurationCreationFailed(#[source] kube::Error),
 }
 
-pub async fn reconcile(
+pub async fn reconcile_validatingrule(
     validating_rule: Arc<ValidatingRule>,
     ctx: Arc<Data>,
 ) -> Result<Action, Error> {
@@ -36,12 +42,11 @@ pub async fn reconcile(
         .metadata
         .name
         .ok_or(Error::MissingObjectKey(".metadata.name"))?;
-    let vwc_name = format!("checkpoint-validatingrule-{}", name);
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
 
     let vwc = ValidatingWebhookConfiguration {
         metadata: ObjectMeta {
-            name: Some(vwc_name.clone()),
+            name: Some(name.clone()),
             owner_references: Some(vec![oref]),
             ..Default::default()
         },
@@ -72,12 +77,68 @@ pub async fn reconcile(
 
     vwc_api
         .patch(
-            &vwc_name,
+            &name,
             &PatchParams::apply("validatingrule.checkpoint.devsisters.com"),
             &Patch::Apply(&vwc),
         )
         .await
         .map_err(Error::ValidatingWebhookConfigurationCreationFailed)?;
+
+    Ok(Action::await_change())
+}
+
+pub async fn reconcile_mutatingrule(
+    mutating_rule: Arc<MutatingRule>,
+    ctx: Arc<Data>,
+) -> Result<Action, Error> {
+    let client = &ctx.client;
+    let mutating_rule = (*mutating_rule).clone();
+    let oref = mutating_rule.controller_owner_ref(&()).unwrap();
+    let name = mutating_rule
+        .metadata
+        .name
+        .ok_or(Error::MissingObjectKey(".metadata.name"))?;
+    let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
+
+    let mwc = MutatingWebhookConfiguration {
+        metadata: ObjectMeta {
+            name: Some(name.clone()),
+            owner_references: Some(vec![oref]),
+            ..Default::default()
+        },
+        webhooks: Some(vec![MutatingWebhook {
+            name: format!("{}.mutatingrule.checkpoint.devsisters.com", name),
+            failure_policy: mutating_rule.spec.failure_policy.map(|fp| fp.to_string()),
+            namespace_selector: mutating_rule.spec.namespace_selector,
+            object_selector: mutating_rule.spec.object_selector,
+            rules: mutating_rule.spec.object_rules,
+            timeout_seconds: mutating_rule.spec.timeout_seconds,
+            client_config: WebhookClientConfig {
+                ca_bundle: Some(k8s_openapi::ByteString(
+                    CONFIG.ca_bundle.as_bytes().to_vec(),
+                )),
+                service: Some(ServiceReference {
+                    namespace: CONFIG.service_namespace.clone(),
+                    name: CONFIG.service_name.clone(),
+                    path: Some(format!("/mutate/{}", name)),
+                    port: Some(443),
+                }),
+                url: None,
+            },
+            admission_review_versions: vec!["v1".to_string()],
+            side_effects: "None".to_string(),
+            ..Default::default()
+        }]),
+    };
+
+    mwc_api
+        .patch(
+            &name,
+            &PatchParams::apply("mutatingrule.checkpoint.devsisters.com"),
+            &Patch::Apply(&mwc),
+        )
+        .await
+        .map_err(Error::MutatingWebhookConfigurationCreationFailed)?;
 
     Ok(Action::await_change())
 }
