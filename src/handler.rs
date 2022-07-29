@@ -23,6 +23,8 @@ pub fn create_app(kube_client: kube::Client) -> Router {
 enum Error {
     #[error("rule not found")]
     RuleNotFound,
+    #[error("Kubernetes error: {0}")]
+    Kubernetes(#[source] kube::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] rlua::Error),
     #[error("failed to set admission request to global Lua value: {0}")]
@@ -41,29 +43,17 @@ enum Error {
     SerializePatch(#[source] SerializePatchError),
 }
 
-struct ResponseError(anyhow::Error);
-
-impl From<anyhow::Error> for ResponseError {
-    fn from(error: anyhow::Error) -> Self {
-        Self(error)
-    }
-}
-
-impl response::IntoResponse for ResponseError {
+impl response::IntoResponse for Error {
     fn into_response(self) -> response::Response {
-        let status_code = if let Some(error) = self.0.downcast_ref::<Error>() {
-            match error {
-                Error::RuleNotFound => StatusCode::NOT_FOUND,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            }
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
+        let status_code = match self {
+            Self::RuleNotFound => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        (status_code, self.0.to_string()).into_response()
+        (status_code, self.to_string()).into_response()
     }
 }
 
-type ResultResponse<T> = Result<T, ResponseError>;
+type ResultResponse<T> = Result<T, Error>;
 
 async fn ping() -> &'static str {
     "ok"
@@ -95,18 +85,15 @@ async fn validate(
     vr_api: Api<ValidatingRule>,
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
-) -> anyhow::Result<AdmissionResponse> {
-    let vr = vr_api
-        .get(rule_name)
-        .await
-        .map_err(|error| -> anyhow::Error {
-            if let kube::Error::Api(ref api_error) = error {
-                if api_error.code == 404 {
-                    return Error::RuleNotFound.into();
-                }
+) -> Result<AdmissionResponse, Error> {
+    let vr = vr_api.get(rule_name).await.map_err(|error| {
+        if let kube::Error::Api(ref api_error) = error {
+            if api_error.code == 404 {
+                return Error::RuleNotFound;
             }
-            error.into()
-        })?;
+        }
+        Error::Kubernetes(error)
+    })?;
 
     let lua = Lua::new();
     let deny_reason = lua.context(|lua_ctx| -> Result<Option<String>, Error> {
@@ -170,18 +157,15 @@ async fn mutate(
     mr_api: Api<MutatingRule>,
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
-) -> anyhow::Result<AdmissionResponse> {
-    let mr = mr_api
-        .get(rule_name)
-        .await
-        .map_err(|error| -> anyhow::Error {
-            if let kube::Error::Api(ref api_error) = error {
-                if api_error.code == 404 {
-                    return Error::RuleNotFound.into();
-                }
+) -> Result<AdmissionResponse, Error> {
+    let mr = mr_api.get(rule_name).await.map_err(|error| {
+        if let kube::Error::Api(ref api_error) = error {
+            if api_error.code == 404 {
+                return Error::RuleNotFound;
             }
-            error.into()
-        })?;
+        }
+        Error::Kubernetes(error)
+    })?;
 
     let lua = Lua::new();
     let (deny_reason, patch) = lua.context(
