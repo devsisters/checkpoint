@@ -1,0 +1,6 @@
+/.git
+/target
+/helm
+/README.md
+/Dockerfile
+/.gitignore
