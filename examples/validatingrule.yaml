@@ -1,0 +1,14 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: check-namespace-name-is-cute
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["namespaces"]
+    operations: ["CREATE"]
+  code: |
+    if request.name:sub(-4) ~= "-uwu" then
+      deny_reason = "That name is not cute."
+    end

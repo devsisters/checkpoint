@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkpoint-controller-service
+  labels:
+    {{- include "checkpoint.labels" . | nindent 4 }}
+spec:
+  ports:
+    - protocol: TCP
+      port: {{ .Values.service.port }}
+      targetPort: 3000
+  selector:
+    {{- include "checkpoint.selectorLabels" . | nindent 4 }}
