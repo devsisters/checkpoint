@@ -1,0 +1,30 @@
+name: Lint
+
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-18.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: rustfmt, clippy
+    - uses: actions/cache@v2
+      with:
+        path: |
+          target
+          ~/.cargo/registry
+        key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          rust-${{ runner.os }}-
+    - uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: -- --check
+    - uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --no-deps -- -D warnings
