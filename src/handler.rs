@@ -25,6 +25,8 @@ enum Error {
     RuleNotFound,
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
+    #[error("failed to set Lua sandbox mode: {0}")]
+    SetLuaSandbox(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to set admission request to global Lua value: {0}")]
@@ -96,6 +98,7 @@ async fn validate(
     })?;
 
     let lua = Lua::new();
+    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
     let globals = lua.globals();
     globals
         .set(
@@ -159,6 +162,7 @@ async fn mutate(
     })?;
 
     let lua = Lua::new();
+    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
     let globals = lua.globals();
     globals
         .set(
