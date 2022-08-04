@@ -34,11 +34,7 @@ enum Error {
     #[error("failed to set name for Lua code: {0}")]
     SetLuaCodeName(#[source] mlua::Error),
     #[error("failed to execute Lua code: {0}")]
-    LuaExec(#[source] mlua::Error),
-    #[error("failed to get `deny_reason` Lua variable value: {0}")]
-    GetDenyReasonValue(#[source] mlua::Error),
-    #[error("failed to get `patch` Lua variable value: {0}")]
-    GetPatchValue(#[source] mlua::Error),
+    LuaEval(#[source] mlua::Error),
     #[error("failed to convert `patch` Lua variable value to Patch object: {0}")]
     ConvertPatchFromLuaValue(#[source] mlua::Error),
     #[error("failed to serialize Patch object: {0}")]
@@ -113,7 +109,7 @@ async fn validate(
         .set_name("rule code")
         .map_err(Error::SetLuaCodeName)?
         .eval()
-        .map_err(Error::LuaExec)?;
+        .map_err(Error::LuaEval)?;
 
     let resp: AdmissionResponse = req.into();
     let resp = if let Some(deny_reason) = deny_reason {
@@ -172,19 +168,12 @@ async fn mutate(
         )
         .map_err(Error::SetGlobalAdmissionRequestValue)?;
 
-    lua.load(&mr.spec.code)
+    let (deny_reason, patch): (Option<String>, Option<mlua::Value>) = lua
+        .load(&mr.spec.code)
         .set_name("rule code")
         .map_err(Error::SetLuaCodeName)?
-        .exec()
-        .map_err(Error::LuaExec)?;
-
-    let deny_reason = globals
-        .get::<_, Option<String>>("deny_reason")
-        .map_err(Error::GetDenyReasonValue)?;
-
-    let patch = globals
-        .get::<_, Option<mlua::Value>>("patch")
-        .map_err(Error::GetPatchValue)?;
+        .eval()
+        .map_err(Error::LuaEval)?;
     let patch: Option<Vec<PatchOperation>> = patch
         .map(|v| lua.from_value(v))
         .transpose()
