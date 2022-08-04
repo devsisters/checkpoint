@@ -10,5 +10,5 @@ spec:
     operations: ["CREATE"]
   code: |
     if request.name:sub(-4) ~= "-uwu" then
-      deny_reason = "That name is not cute."
+      return "That name is not cute."
     end

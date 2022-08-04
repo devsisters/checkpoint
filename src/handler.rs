@@ -107,16 +107,12 @@ async fn validate(
             )
             .map_err(Error::SetGlobalAdmissionRequestValue)?;
 
-        lua_ctx
+        let deny_reason = lua_ctx
             .load(&vr.spec.code)
             .set_name("rule code")
             .map_err(Error::SetLuaCodeName)?
-            .exec()
+            .eval()
             .map_err(Error::LuaExec)?;
-
-        let deny_reason = globals
-            .get::<_, Option<String>>("deny_reason")
-            .map_err(Error::GetDenyReasonValue)?;
 
         Ok(deny_reason)
     })?;
