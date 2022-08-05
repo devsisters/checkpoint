@@ -7,7 +7,7 @@ use kube::{
     },
     Api,
 };
-use rlua::Lua;
+use mlua::{Lua, LuaSerdeExt};
 
 use crate::types::{MutatingRule, ValidatingRule};
 
@@ -25,20 +25,22 @@ enum Error {
     RuleNotFound,
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
+    #[error("failed to set Lua sandbox mode: {0}")]
+    SetLuaSandbox(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
-    ConvertAdmissionRequestToLuaValue(#[source] rlua::Error),
+    ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to set admission request to global Lua value: {0}")]
-    SetGlobalAdmissionRequestValue(#[source] rlua::Error),
+    SetGlobalAdmissionRequestValue(#[source] mlua::Error),
     #[error("failed to set name for Lua code: {0}")]
-    SetLuaCodeName(#[source] rlua::Error),
+    SetLuaCodeName(#[source] mlua::Error),
     #[error("failed to execute Lua code: {0}")]
-    LuaExec(#[source] rlua::Error),
+    LuaExec(#[source] mlua::Error),
     #[error("failed to get `deny_reason` Lua variable value: {0}")]
-    GetDenyReasonValue(#[source] rlua::Error),
+    GetDenyReasonValue(#[source] mlua::Error),
     #[error("failed to get `patch` Lua variable value: {0}")]
-    GetPatchValue(#[source] rlua::Error),
+    GetPatchValue(#[source] mlua::Error),
     #[error("failed to convert `patch` Lua variable value to Patch object: {0}")]
-    ConvertPatchFromLuaValue(#[source] rlua::Error),
+    ConvertPatchFromLuaValue(#[source] mlua::Error),
     #[error("failed to serialize Patch object: {0}")]
     SerializePatch(#[source] SerializePatchError),
 }
@@ -96,26 +98,22 @@ async fn validate(
     })?;
 
     let lua = Lua::new();
-    let deny_reason = lua.context(|lua_ctx| -> Result<Option<String>, Error> {
-        let globals = lua_ctx.globals();
+    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
+    let globals = lua.globals();
+    globals
+        .set(
+            "request",
+            lua.to_value(&req)
+                .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
+        )
+        .map_err(Error::SetGlobalAdmissionRequestValue)?;
 
-        globals
-            .set(
-                "request",
-                rlua_serde::to_value(lua_ctx, req.clone())
-                    .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
-            )
-            .map_err(Error::SetGlobalAdmissionRequestValue)?;
-
-        let deny_reason = lua_ctx
-            .load(&vr.spec.code)
-            .set_name("rule code")
-            .map_err(Error::SetLuaCodeName)?
-            .eval()
-            .map_err(Error::LuaExec)?;
-
-        Ok(deny_reason)
-    })?;
+    let deny_reason: Option<String> = lua
+        .load(&vr.spec.code)
+        .set_name("rule code")
+        .map_err(Error::SetLuaCodeName)?
+        .eval()
+        .map_err(Error::LuaExec)?;
 
     let resp: AdmissionResponse = req.into();
     let resp = if let Some(deny_reason) = deny_reason {
@@ -164,40 +162,33 @@ async fn mutate(
     })?;
 
     let lua = Lua::new();
-    let (deny_reason, patch) = lua.context(
-        |lua_ctx| -> Result<(Option<String>, Option<Vec<PatchOperation>>), Error> {
-            let globals = lua_ctx.globals();
+    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
+    let globals = lua.globals();
+    globals
+        .set(
+            "request",
+            lua.to_value(&req)
+                .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
+        )
+        .map_err(Error::SetGlobalAdmissionRequestValue)?;
 
-            globals
-                .set(
-                    "request",
-                    rlua_serde::to_value(lua_ctx, req.clone())
-                        .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
-                )
-                .map_err(Error::SetGlobalAdmissionRequestValue)?;
+    lua.load(&mr.spec.code)
+        .set_name("rule code")
+        .map_err(Error::SetLuaCodeName)?
+        .exec()
+        .map_err(Error::LuaExec)?;
 
-            lua_ctx
-                .load(&mr.spec.code)
-                .set_name("rule code")
-                .map_err(Error::SetLuaCodeName)?
-                .exec()
-                .map_err(Error::LuaExec)?;
+    let deny_reason = globals
+        .get::<_, Option<String>>("deny_reason")
+        .map_err(Error::GetDenyReasonValue)?;
 
-            let deny_reason = globals
-                .get::<_, Option<String>>("deny_reason")
-                .map_err(Error::GetDenyReasonValue)?;
-
-            let patch = globals
-                .get::<_, Option<rlua::Value>>("patch")
-                .map_err(Error::GetPatchValue)?;
-            let patch: Option<Vec<PatchOperation>> = patch
-                .map(rlua_serde::from_value)
-                .transpose()
-                .map_err(Error::ConvertPatchFromLuaValue)?;
-
-            Ok((deny_reason, patch))
-        },
-    )?;
+    let patch = globals
+        .get::<_, Option<mlua::Value>>("patch")
+        .map_err(Error::GetPatchValue)?;
+    let patch: Option<Vec<PatchOperation>> = patch
+        .map(|v| lua.from_value(v))
+        .transpose()
+        .map_err(Error::ConvertPatchFromLuaValue)?;
 
     let resp: AdmissionResponse = req.into();
     let resp = if let Some(deny_reason) = deny_reason {
