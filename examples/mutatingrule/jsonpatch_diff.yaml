@@ -1,0 +1,18 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: MutatingRule
+metadata:
+  name: mutate-namespace-name-cute-with-jsonpatch
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["namespaces"]
+    operations: ["CREATE"]
+  code: |
+    current_object = request.object
+    if current_object.metadata.name:sub(-4) ~= "-uwu" then
+      new_object = deepcopy(request.object)
+      new_object.metadata.name = current_object.metadata.name .. "-uwu"
+      patch = jsonpatch_diff(current_object, new_object)
+      return nil, patch
+    end
