@@ -11,6 +11,9 @@ pub(super) fn prepare_lua_ctx(
     lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
 
     {
+        let deepcopy = lua
+            .create_function(lua_deepcopy)
+            .map_err(Error::CreateLuaFunction)?;
         let jsonpatch_diff = lua
             .create_function(lua_jsonpatch_diff)
             .map_err(Error::CreateLuaFunction)?;
@@ -21,6 +24,10 @@ pub(super) fn prepare_lua_ctx(
             .set("jsonpatch_diff", jsonpatch_diff)
             .map_err(Error::SetLuaValue)?;
         globals
+            .set("deepcopy", deepcopy)
+            .map_err(Error::SetLuaValue)?;
+
+        globals
             .set(
                 "request",
                 lua.to_value(admission_req)
@@ -30,6 +37,11 @@ pub(super) fn prepare_lua_ctx(
     }
 
     Ok(lua)
+}
+
+fn lua_deepcopy<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<Value<'lua>> {
+    let v_json: serde_json::Value = lua.from_value(v)?;
+    lua.to_value(&v_json)
 }
 
 fn lua_jsonpatch_diff<'lua>(
