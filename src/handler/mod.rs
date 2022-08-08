@@ -29,6 +29,10 @@ enum Error {
     Kubernetes(#[source] kube::Error),
     #[error("failed to set Lua sandbox mode: {0}")]
     SetLuaSandbox(#[source] mlua::Error),
+    #[error("failed to create Lua function: {0}")]
+    CreateLuaFunction(#[source] mlua::Error),
+    #[error("failed to set Lua value: {0}")]
+    SetLuaValue(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to set admission request to global Lua value: {0}")]
