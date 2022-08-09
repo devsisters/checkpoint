@@ -90,14 +90,11 @@ async fn validate(
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
 ) -> Result<AdmissionResponse, Error> {
-    let vr = vr_api.get(rule_name).await.map_err(|error| {
-        if let kube::Error::Api(ref api_error) = error {
-            if api_error.code == 404 {
-                return Error::RuleNotFound;
-            }
-        }
-        Error::Kubernetes(error)
-    })?;
+    let vr = vr_api
+        .get_opt(rule_name)
+        .await
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::RuleNotFound)?;
 
     let lua = lua::prepare_lua_ctx(req)?;
 
@@ -145,14 +142,11 @@ async fn mutate(
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
 ) -> Result<AdmissionResponse, Error> {
-    let mr = mr_api.get(rule_name).await.map_err(|error| {
-        if let kube::Error::Api(ref api_error) = error {
-            if api_error.code == 404 {
-                return Error::RuleNotFound;
-            }
-        }
-        Error::Kubernetes(error)
-    })?;
+    let mr = mr_api
+        .get_opt(rule_name)
+        .await
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::RuleNotFound)?;
 
     let lua = lua::prepare_lua_ctx(req)?;
 
