@@ -1,3 +1,5 @@
+mod lua;
+
 use axum::{extract, http::StatusCode, response, routing, Router};
 use json_patch::{Patch, PatchOperation};
 use kube::{
@@ -7,7 +9,7 @@ use kube::{
     },
     Api,
 };
-use mlua::{Lua, LuaSerdeExt};
+use mlua::LuaSerdeExt;
 
 use crate::types::{MutatingRule, ValidatingRule};
 
@@ -27,6 +29,10 @@ enum Error {
     Kubernetes(#[source] kube::Error),
     #[error("failed to set Lua sandbox mode: {0}")]
     SetLuaSandbox(#[source] mlua::Error),
+    #[error("failed to create Lua function: {0}")]
+    CreateLuaFunction(#[source] mlua::Error),
+    #[error("failed to set Lua value: {0}")]
+    SetLuaValue(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to set admission request to global Lua value: {0}")]
@@ -93,16 +99,7 @@ async fn validate(
         Error::Kubernetes(error)
     })?;
 
-    let lua = Lua::new();
-    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
-    let globals = lua.globals();
-    globals
-        .set(
-            "request",
-            lua.to_value(&req)
-                .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
-        )
-        .map_err(Error::SetGlobalAdmissionRequestValue)?;
+    let lua = lua::prepare_lua_ctx(req)?;
 
     let deny_reason: Option<String> = lua
         .load(&vr.spec.code)
@@ -157,16 +154,7 @@ async fn mutate(
         Error::Kubernetes(error)
     })?;
 
-    let lua = Lua::new();
-    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
-    let globals = lua.globals();
-    globals
-        .set(
-            "request",
-            lua.to_value(&req)
-                .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
-        )
-        .map_err(Error::SetGlobalAdmissionRequestValue)?;
+    let lua = lua::prepare_lua_ctx(req)?;
 
     let (deny_reason, patch): (Option<String>, Option<mlua::Value>) = lua
         .load(&mr.spec.code)
