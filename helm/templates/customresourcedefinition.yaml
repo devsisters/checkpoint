@@ -27,14 +27,14 @@ spec:
                   description: Lua code to evaluate when validating request.
                   type: string
                 failurePolicy:
-                  description: "FailurePolicy for ValidatingWebhookConfiguration.\n\nFailurePolicy defines how unrecognized errors from the admission endpoint are handled - allowed values are Ignore or Fail. Defaults to Fail."
+                  description: "FailurePolicy for webhook configuration.\n\nFailurePolicy defines how unrecognized errors from the admission endpoint are handled - allowed values are Ignore or Fail. Defaults to Fail."
                   enum:
                     - Fail
                     - Ignore
                   nullable: true
                   type: string
                 namespaceSelector:
-                  description: "NamespaceSelector for ValidatingWebhookConfiguration.\n\nNamespaceSelector decides wheter to run the Rule on an object based on whether the namespace for that object matches the selector."
+                  description: "NamespaceSelector for webhook configuration.\n\nNamespaceSelector decides wheter to run the Rule on an object based on whether the namespace for that object matches the selector."
                   nullable: true
                   properties:
                     matchExpressions:
@@ -65,7 +65,7 @@ spec:
                       type: object
                   type: object
                 objectRules:
-                  description: "ObjectRules for Rules field in ValidatingWebhookConfiguration\n\nObjectRules describes what operations on what resources/subresources the Rule cares about. Default to the empty LabelSelector, which matches everything."
+                  description: "ObjectRules for Rules field in webhook configuration.\n\nObjectRules describes what operations on what resources/subresources the Rule cares about. Default to the empty LabelSelector, which matches everything."
                   items:
                     description: RuleWithOperations is a tuple of Operations and Resources. It is recommended to make sure that all the tuple expansions are valid.
                     properties:
@@ -96,7 +96,7 @@ spec:
                   nullable: true
                   type: array
                 objectSelector:
-                  description: "ObjectSelector for ValidatingWebhookConfiguration\n\nObjectSelector decides whether to run the Rule based on if the object has matching labels. Default to the empty LabelSelector, which matches everything."
+                  description: "ObjectSelector for webhook configuration.\n\nObjectSelector decides whether to run the Rule based on if the object has matching labels. Default to the empty LabelSelector, which matches everything."
                   nullable: true
                   properties:
                     matchExpressions:
@@ -127,7 +127,7 @@ spec:
                       type: object
                   type: object
                 timeoutSeconds:
-                  description: "TimeoutSeconds for ValidatingWebhookConfiguration.\n\nTimeoutSeconds specifies the timeout for this Rule. Default to 10 seconds."
+                  description: "TimeoutSeconds for webhook configuration..\n\nTimeoutSeconds specifies the timeout for this Rule. Default to 10 seconds."
                   format: int32
                   nullable: true
                   type: integer
@@ -174,14 +174,14 @@ spec:
                   description: Lua code to evaluate when validating request.
                   type: string
                 failurePolicy:
-                  description: "FailurePolicy for MutatingWebhookConfiguration.\n\nFailurePolicy defines how unrecognized errors from the admission endpoint are handled - allowed values are Ignore or Fail. Defaults to Fail."
+                  description: "FailurePolicy for webhook configuration.\n\nFailurePolicy defines how unrecognized errors from the admission endpoint are handled - allowed values are Ignore or Fail. Defaults to Fail."
                   enum:
                     - Fail
                     - Ignore
                   nullable: true
                   type: string
                 namespaceSelector:
-                  description: "NamespaceSelector for MutatingWebhookConfiguration.\n\nNamespaceSelector decides wheter to run the Rule on an object based on whether the namespace for that object matches the selector."
+                  description: "NamespaceSelector for webhook configuration.\n\nNamespaceSelector decides wheter to run the Rule on an object based on whether the namespace for that object matches the selector."
                   nullable: true
                   properties:
                     matchExpressions:
@@ -212,7 +212,7 @@ spec:
                       type: object
                   type: object
                 objectRules:
-                  description: "ObjectRules for Rules field in MutatingWebhookConfiguration\n\nObjectRules describes what operations on what resources/subresources the Rule cares about. Default to the empty LabelSelector, which matches everything."
+                  description: "ObjectRules for Rules field in webhook configuration.\n\nObjectRules describes what operations on what resources/subresources the Rule cares about. Default to the empty LabelSelector, which matches everything."
                   items:
                     description: RuleWithOperations is a tuple of Operations and Resources. It is recommended to make sure that all the tuple expansions are valid.
                     properties:
@@ -243,7 +243,7 @@ spec:
                   nullable: true
                   type: array
                 objectSelector:
-                  description: "ObjectSelector for MutatingWebhookConfiguration\n\nObjectSelector decides whether to run the Rule based on if the object has matching labels. Default to the empty LabelSelector, which matches everything."
+                  description: "ObjectSelector for webhook configuration.\n\nObjectSelector decides whether to run the Rule based on if the object has matching labels. Default to the empty LabelSelector, which matches everything."
                   nullable: true
                   properties:
                     matchExpressions:
@@ -274,7 +274,7 @@ spec:
                       type: object
                   type: object
                 timeoutSeconds:
-                  description: "TimeoutSeconds for MutatingWebhookConfiguration.\n\nTimeoutSeconds specifies the timeout for this Rule. Default to 10 seconds."
+                  description: "TimeoutSeconds for webhook configuration..\n\nTimeoutSeconds specifies the timeout for this Rule. Default to 10 seconds."
                   format: int32
                   nullable: true
                   type: integer

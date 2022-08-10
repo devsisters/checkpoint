@@ -62,11 +62,15 @@ pub async fn reconcile_validatingrule(
         },
         webhooks: Some(vec![ValidatingWebhook {
             name: format!("{}.validatingrule.checkpoint.devsisters.com", name),
-            failure_policy: validating_rule.spec.failure_policy.map(|fp| fp.to_string()),
-            namespace_selector: validating_rule.spec.namespace_selector,
-            object_selector: validating_rule.spec.object_selector,
-            rules: validating_rule.spec.object_rules,
-            timeout_seconds: validating_rule.spec.timeout_seconds,
+            failure_policy: validating_rule
+                .spec
+                .0
+                .failure_policy
+                .map(|fp| fp.to_string()),
+            namespace_selector: validating_rule.spec.0.namespace_selector,
+            object_selector: validating_rule.spec.0.object_selector,
+            rules: validating_rule.spec.0.object_rules,
+            timeout_seconds: validating_rule.spec.0.timeout_seconds,
             client_config: WebhookClientConfig {
                 ca_bundle: Some(k8s_openapi::ByteString(
                     CONFIG.ca_bundle.as_bytes().to_vec(),
@@ -128,11 +132,11 @@ pub async fn reconcile_mutatingrule(
         },
         webhooks: Some(vec![MutatingWebhook {
             name: format!("{}.mutatingrule.checkpoint.devsisters.com", name),
-            failure_policy: mutating_rule.spec.failure_policy.map(|fp| fp.to_string()),
-            namespace_selector: mutating_rule.spec.namespace_selector,
-            object_selector: mutating_rule.spec.object_selector,
-            rules: mutating_rule.spec.object_rules,
-            timeout_seconds: mutating_rule.spec.timeout_seconds,
+            failure_policy: mutating_rule.spec.0.failure_policy.map(|fp| fp.to_string()),
+            namespace_selector: mutating_rule.spec.0.namespace_selector,
+            object_selector: mutating_rule.spec.0.object_selector,
+            rules: mutating_rule.spec.0.object_rules,
+            timeout_seconds: mutating_rule.spec.0.timeout_seconds,
             client_config: WebhookClientConfig {
                 ca_bundle: Some(k8s_openapi::ByteString(
                     CONFIG.ca_bundle.as_bytes().to_vec(),
