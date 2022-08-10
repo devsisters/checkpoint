@@ -1,3 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
+subjects:
+- kind: ServiceAccount
+  name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
+  namespace: default
+---
 apiVersion: checkpoint.devsisters.com/v1
 kind: ValidatingRule
 metadata:
@@ -8,6 +36,9 @@ spec:
     apiVersions: ["*"]
     resources: ["namespaces"]
     operations: ["CREATE"]
+  serviceAccount:
+    namespace: default
+    name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
   code: |
     block_namespace = kube_get({group="", version="v1", kind="Namespace", name="block"})
     if block_namespace == nil then
