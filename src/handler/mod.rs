@@ -13,6 +13,7 @@ use mlua::LuaSerdeExt;
 
 use crate::types::{MutatingRule, ValidatingRule};
 
+/// Prepare HTTP router
 pub fn create_app(kube_client: kube::Client) -> Router {
     Router::new()
         .route("/ping", routing::get(ping))
@@ -21,6 +22,7 @@ pub fn create_app(kube_client: kube::Client) -> Router {
         .layer(extract::Extension(kube_client))
 }
 
+/// Errors can be raised within HTTP handler
 #[derive(thiserror::Error, Debug)]
 enum Error {
     #[error("rule not found")]
@@ -57,17 +59,18 @@ impl response::IntoResponse for Error {
     }
 }
 
-type ResultResponse<T> = Result<T, Error>;
-
 async fn ping() -> &'static str {
     "ok"
 }
 
+/// Validate HTTP API handler
 async fn validate_handler(
     extract::Extension(kube_client): extract::Extension<kube::Client>,
     extract::Path(rule_name): extract::Path<String>,
     extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
-) -> ResultResponse<response::Json<AdmissionReview<DynamicObject>>> {
+) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
+    // Convert AdmissionReview into AdmissionRequest
+    // and reject if fails
     let req: AdmissionRequest<_> = match req.try_into() {
         Ok(req) => req,
         Err(error) => {
@@ -77,28 +80,40 @@ async fn validate_handler(
             ));
         }
     };
+
+    // Prepare Kubernetes API
     let vr_api = Api::<ValidatingRule>::all(kube_client);
+
     let resp = validate(vr_api, &rule_name, &req).await;
+
+    // Log if error happens
     if let Err(error) = &resp {
         tracing::error!(%req.name, ?req.namespace, %rule_name, %error, "failed to validate");
     }
+
     Ok(response::Json(resp?.into_review()))
 }
 
+/// Actual validating function
 async fn validate(
     vr_api: Api<ValidatingRule>,
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
 ) -> Result<AdmissionResponse, Error> {
+    // Get matching ValidatingRule
     let vr = vr_api
         .get_opt(rule_name)
         .await
         .map_err(Error::Kubernetes)?
         .ok_or(Error::RuleNotFound)?;
 
+    // Evaluate Lua code and get `deny_reason`
     let deny_reason: Option<String> = lua::eval_lua_code(vr.spec.code, req.clone()).await?;
 
+    // Prepare AdmissionResponse from AddmissionRequest
     let resp: AdmissionResponse = req.into();
+
+    // Set deny reason if exists
     let resp = if let Some(deny_reason) = deny_reason {
         resp.deny(deny_reason)
     } else {
@@ -112,7 +127,9 @@ async fn mutate_handler(
     extract::Extension(kube_client): extract::Extension<kube::Client>,
     extract::Path(rule_name): extract::Path<String>,
     extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
-) -> ResultResponse<response::Json<AdmissionReview<DynamicObject>>> {
+) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
+    // Convert AdmissionReview into AdmissionRequest
+    // and reject if fails
     let req: AdmissionRequest<_> = match req.try_into() {
         Ok(req) => req,
         Err(error) => {
@@ -122,14 +139,21 @@ async fn mutate_handler(
             ));
         }
     };
+
+    // Prepare Kubernetes API
     let mr_api = Api::<MutatingRule>::all(kube_client);
+
     let resp = mutate(mr_api, &rule_name, &req).await;
+
+    // Log if error happens
     if let Err(error) = &resp {
         tracing::error!(%req.name, ?req.namespace, %rule_name, %error, "failed to mutate");
     }
+
     Ok(response::Json(resp?.into_review()))
 }
 
+/// Wrapper to implement FromLua
 struct VecPatchOperation(Vec<PatchOperation>);
 
 impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
@@ -139,26 +163,34 @@ impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
     }
 }
 
+/// Actual mutating function
 async fn mutate(
     mr_api: Api<MutatingRule>,
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
 ) -> Result<AdmissionResponse, Error> {
+    // Get matching MutatingRule
     let mr = mr_api
         .get_opt(rule_name)
         .await
         .map_err(Error::Kubernetes)?
         .ok_or(Error::RuleNotFound)?;
 
+    // Evaluate Lua code and get `deny_reason` and `patch`
     let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) =
         lua::eval_lua_code(mr.spec.code, req.clone()).await?;
 
+    // Prepare AdmissionResponse from AdmissionRequest
     let resp: AdmissionResponse = req.into();
+
+    // Set deny reason if exists
     let resp = if let Some(deny_reason) = deny_reason {
         resp.deny(deny_reason)
     } else {
         resp
     };
+
+    // Set patch if exists
     let resp = if let Some(patch) = patch {
         resp.with_patch(Patch(patch.0))
             .map_err(Error::SerializePatch)?

@@ -21,6 +21,7 @@ pub struct Data {
     pub client: kube::Client,
 }
 
+/// Errors can be raised within reconciler
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("MissingObjectKey: {0}")]
@@ -31,19 +32,28 @@ pub enum Error {
     MutatingWebhookConfigurationCreationFailed(#[source] kube::Error),
 }
 
+/// ValidatingRule reconciler
 pub async fn reconcile_validatingrule(
     validating_rule: Arc<ValidatingRule>,
     ctx: Arc<Data>,
 ) -> Result<Action, Error> {
+    // Get Kubernetes client from context data
     let client = &ctx.client;
+
     let validating_rule = (*validating_rule).clone();
+
+    // Prepare ownership reference
     let oref = validating_rule.controller_owner_ref(&()).unwrap();
+
     let name = validating_rule
         .metadata
         .name
         .ok_or(Error::MissingObjectKey(".metadata.name"))?;
+
+    // Prepare Kubernetes API
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
 
+    // Popluate ValidatingWebhookConfiguration
     let vwc = ValidatingWebhookConfiguration {
         metadata: ObjectMeta {
             name: Some(name.clone()),
@@ -75,6 +85,7 @@ pub async fn reconcile_validatingrule(
         }]),
     };
 
+    // Create or update ValidatingWebhookConfiguration
     vwc_api
         .patch(
             &name,
@@ -87,19 +98,28 @@ pub async fn reconcile_validatingrule(
     Ok(Action::await_change())
 }
 
+/// MutatingRule reconciler
 pub async fn reconcile_mutatingrule(
     mutating_rule: Arc<MutatingRule>,
     ctx: Arc<Data>,
 ) -> Result<Action, Error> {
+    // Get Kubernetes client from context data
     let client = &ctx.client;
+
     let mutating_rule = (*mutating_rule).clone();
+
+    // Prepare ownership reference
     let oref = mutating_rule.controller_owner_ref(&()).unwrap();
+
     let name = mutating_rule
         .metadata
         .name
         .ok_or(Error::MissingObjectKey(".metadata.name"))?;
+
+    // Prepare Kubernetes API
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
+    // Popluate MutatingWebhookConfiguration
     let mwc = MutatingWebhookConfiguration {
         metadata: ObjectMeta {
             name: Some(name.clone()),
@@ -131,6 +151,7 @@ pub async fn reconcile_mutatingrule(
         }]),
     };
 
+    // Create or update MutatingWebhookConfiguration
     mwc_api
         .patch(
             &name,
@@ -143,6 +164,7 @@ pub async fn reconcile_mutatingrule(
     Ok(Action::await_change())
 }
 
+/// When error occurred, log it and requeue after three seconds
 pub fn error_policy(error: &Error, _ctx: Arc<Data>) -> Action {
     tracing::error!(%error);
     Action::requeue(Duration::from_secs(3))

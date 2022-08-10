@@ -13,6 +13,7 @@ use k8s_openapi::api::admissionregistration::v1::{
 };
 use kube::{api::Api, runtime::Controller};
 
+/// Generate future that awaits shutdown signal
 async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -45,13 +46,17 @@ async fn main() -> Result<()> {
 
     let client = kube::Client::try_default().await?;
 
+    // Prepare HTTP app
     let http_app = crate::handler::create_app(client.clone());
+
+    // Prepare TLS config for HTTPS serving
     let tls_config = RustlsConfig::from_pem_file(
         &crate::config::CONFIG.cert_path,
         &crate::config::CONFIG.key_path,
     )
     .await?;
 
+    // Prepare shutdown signal futures
     let axum_server_handle = axum_server::Handle::new();
     let shutdown_signal_fut = shutdown_signal(axum_server_handle.clone());
     let (shutdown_signal_broadcast_tx, mut shutdown_signal_broadcast_rx1) =
@@ -62,17 +67,20 @@ async fn main() -> Result<()> {
         let _ = shutdown_signal_broadcast_tx.send(());
     });
 
+    // Spawn HTTP server
     let http_handle = tokio::spawn(
         axum_server::bind_rustls(crate::config::CONFIG.listen_addr.parse()?, tls_config)
             .handle(axum_server_handle)
             .serve(http_app.into_make_service()),
     );
 
+    // Prepare Kubernetes APIs
     let vr_api = Api::<crate::types::ValidatingRule>::all(client.clone());
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
     let mr_api = Api::<crate::types::MutatingRule>::all(client.clone());
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
+    // Spawn ValidatingRule controller
     let vr_controller_handle = tokio::spawn(
         Controller::new(vr_api, Default::default())
             .owns(vwc_api, Default::default())
@@ -94,6 +102,7 @@ async fn main() -> Result<()> {
             }),
     );
 
+    // Spawn MutatingRule controller
     let mr_controller_handle = tokio::spawn(
         Controller::new(mr_api, Default::default())
             .owns(mwc_api, Default::default())
@@ -113,6 +122,7 @@ async fn main() -> Result<()> {
             }),
     );
 
+    // Await all spawned futures
     let (res, (), ()) = tokio::try_join!(http_handle, vr_controller_handle, mr_controller_handle)?;
     res?;
 
