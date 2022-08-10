@@ -37,12 +37,14 @@ enum Error {
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to set admission request to global Lua value: {0}")]
     SetGlobalAdmissionRequestValue(#[source] mlua::Error),
+    #[error("failed to create Tokio runtime: {0}")]
+    CreateRuntime(#[source] std::io::Error),
     #[error("failed to set name for Lua code: {0}")]
     SetLuaCodeName(#[source] mlua::Error),
     #[error("failed to execute Lua code: {0}")]
     LuaEval(#[source] mlua::Error),
-    #[error("failed to convert `patch` Lua variable value to Patch object: {0}")]
-    ConvertPatchFromLuaValue(#[source] mlua::Error),
+    #[error("failed to receive from Lua thread: {0}")]
+    RecvLuaThread(#[source] tokio::sync::oneshot::error::RecvError),
     #[error("failed to serialize Patch object: {0}")]
     SerializePatch(#[source] SerializePatchError),
 }
@@ -96,14 +98,7 @@ async fn validate(
         .map_err(Error::Kubernetes)?
         .ok_or(Error::RuleNotFound)?;
 
-    let lua = lua::prepare_lua_ctx(req)?;
-
-    let deny_reason: Option<String> = lua
-        .load(&vr.spec.code)
-        .set_name("rule code")
-        .map_err(Error::SetLuaCodeName)?
-        .eval()
-        .map_err(Error::LuaEval)?;
+    let deny_reason: Option<String> = lua::eval_lua_code(vr.spec.code, req.clone()).await?;
 
     let resp: AdmissionResponse = req.into();
     let resp = if let Some(deny_reason) = deny_reason {
@@ -137,6 +132,15 @@ async fn mutate_handler(
     Ok(response::Json(resp?.into_review()))
 }
 
+struct VecPatchOperation(Vec<PatchOperation>);
+
+impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
+    fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
+        let v = lua.from_value(lua_value)?;
+        Ok(Self(v))
+    }
+}
+
 async fn mutate(
     mr_api: Api<MutatingRule>,
     rule_name: &str,
@@ -148,18 +152,8 @@ async fn mutate(
         .map_err(Error::Kubernetes)?
         .ok_or(Error::RuleNotFound)?;
 
-    let lua = lua::prepare_lua_ctx(req)?;
-
-    let (deny_reason, patch): (Option<String>, Option<mlua::Value>) = lua
-        .load(&mr.spec.code)
-        .set_name("rule code")
-        .map_err(Error::SetLuaCodeName)?
-        .eval()
-        .map_err(Error::LuaEval)?;
-    let patch: Option<Vec<PatchOperation>> = patch
-        .map(|v| lua.from_value(v))
-        .transpose()
-        .map_err(Error::ConvertPatchFromLuaValue)?;
+    let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) =
+        lua::eval_lua_code(mr.spec.code, req.clone()).await?;
 
     let resp: AdmissionResponse = req.into();
     let resp = if let Some(deny_reason) = deny_reason {
@@ -168,7 +162,7 @@ async fn mutate(
         resp
     };
     let resp = if let Some(patch) = patch {
-        resp.with_patch(Patch(patch))
+        resp.with_patch(Patch(patch.0))
             .map_err(Error::SerializePatch)?
     } else {
         resp

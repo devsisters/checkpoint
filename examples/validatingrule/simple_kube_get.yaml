@@ -1,0 +1,17 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: block-namespace-creation-when-block-namespace-exists
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["namespaces"]
+    operations: ["CREATE"]
+  code: |
+    block_namespace = kube_get({group="", version="v1", kind="Namespace", name="block"})
+    if block_namespace == nil then
+      return
+    else
+      return "Namespace creation blocked"
+    end
