@@ -27,6 +27,13 @@ impl fmt::Display for FailurePolicy {
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct ServiceAccountInfo {
+    pub namespace: String,
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct RuleSpec {
     /// FailurePolicy for webhook configuration.
     ///
@@ -52,6 +59,9 @@ pub struct RuleSpec {
     /// TimeoutSeconds specifies the timeout for this Rule.
     /// Default to 10 seconds.
     pub timeout_seconds: Option<i32>,
+
+    /// The name of ServiceAccount to use to run Lua code.
+    pub service_account: Option<ServiceAccountInfo>,
 
     /// Lua code to evaluate when validating request.
     pub code: String,

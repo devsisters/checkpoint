@@ -126,6 +126,18 @@ spec:
                       description: "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed."
                       type: object
                   type: object
+                serviceAccount:
+                  description: The name of ServiceAccount to use to run Lua code.
+                  nullable: true
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                    - name
+                    - namespace
+                  type: object
                 timeoutSeconds:
                   description: "TimeoutSeconds for webhook configuration..\n\nTimeoutSeconds specifies the timeout for this Rule. Default to 10 seconds."
                   format: int32
@@ -272,6 +284,18 @@ spec:
                         type: string
                       description: "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed."
                       type: object
+                  type: object
+                serviceAccount:
+                  description: The name of ServiceAccount to use to run Lua code.
+                  nullable: true
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                    - name
+                    - namespace
                   type: object
                 timeoutSeconds:
                   description: "TimeoutSeconds for webhook configuration..\n\nTimeoutSeconds specifies the timeout for this Rule. Default to 10 seconds."
