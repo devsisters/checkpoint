@@ -27,6 +27,12 @@ pub fn create_app(kube_client: kube::Client) -> Router {
 enum Error {
     #[error("rule not found")]
     RuleNotFound,
+    #[error("serviceAccount is not provided. You should provide serviceAccount field in Rule spec if you want to use `kube_get` or `kube_list` function in Lua code.")]
+    ServiceAccountInfoNotProvided,
+    #[error("ServiceAccount does not have Secret reference")]
+    ServiceAccountDoesNotHaveSecretReference,
+    #[error("ServiceAccount Secret data does not have following key: {0}")]
+    ServiceAccountSecretDataDoesNotHaveKey(&'static str),
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
     #[error("failed to set Lua sandbox mode: {0}")]
@@ -81,10 +87,7 @@ async fn validate_handler(
         }
     };
 
-    // Prepare Kubernetes API
-    let vr_api = Api::<ValidatingRule>::all(kube_client);
-
-    let resp = validate(vr_api, &rule_name, &req).await;
+    let resp = validate(kube_client, &rule_name, &req).await;
 
     // Log if error happens
     if let Err(error) = &resp {
@@ -96,10 +99,13 @@ async fn validate_handler(
 
 /// Actual validating function
 async fn validate(
-    vr_api: Api<ValidatingRule>,
+    client: kube::Client,
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
 ) -> Result<AdmissionResponse, Error> {
+    // Prepare Kubernetes API
+    let vr_api = Api::<ValidatingRule>::all(client.clone());
+
     // Get matching ValidatingRule
     let vr = vr_api
         .get_opt(rule_name)
@@ -108,7 +114,13 @@ async fn validate(
         .ok_or(Error::RuleNotFound)?;
 
     // Evaluate Lua code and get `deny_reason`
-    let deny_reason: Option<String> = lua::eval_lua_code(vr.spec.0.code, req.clone()).await?;
+    let deny_reason: Option<String> = lua::eval_lua_code(
+        client,
+        vr.spec.0.service_account,
+        vr.spec.0.code,
+        req.clone(),
+    )
+    .await?;
 
     // Prepare AdmissionResponse from AddmissionRequest
     let resp: AdmissionResponse = req.into();
@@ -140,10 +152,7 @@ async fn mutate_handler(
         }
     };
 
-    // Prepare Kubernetes API
-    let mr_api = Api::<MutatingRule>::all(kube_client);
-
-    let resp = mutate(mr_api, &rule_name, &req).await;
+    let resp = mutate(kube_client, &rule_name, &req).await;
 
     // Log if error happens
     if let Err(error) = &resp {
@@ -165,10 +174,13 @@ impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
 
 /// Actual mutating function
 async fn mutate(
-    mr_api: Api<MutatingRule>,
+    client: kube::Client,
     rule_name: &str,
     req: &AdmissionRequest<DynamicObject>,
 ) -> Result<AdmissionResponse, Error> {
+    // Prepare Kubernetes API
+    let mr_api = Api::<MutatingRule>::all(client.clone());
+
     // Get matching MutatingRule
     let mr = mr_api
         .get_opt(rule_name)
@@ -177,8 +189,13 @@ async fn mutate(
         .ok_or(Error::RuleNotFound)?;
 
     // Evaluate Lua code and get `deny_reason` and `patch`
-    let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) =
-        lua::eval_lua_code(mr.spec.0.code, req.clone()).await?;
+    let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) = lua::eval_lua_code(
+        client,
+        mr.spec.0.service_account,
+        mr.spec.0.code,
+        req.clone(),
+    )
+    .await?;
 
     // Prepare AdmissionResponse from AdmissionRequest
     let resp: AdmissionResponse = req.into();
