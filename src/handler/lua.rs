@@ -24,12 +24,27 @@ where
             .map_err(Error::CreateRuntime)
             .and_then(|runtime| {
                 runtime.block_on(async move {
-                    let lua = prepare_lua_ctx(&admission_req)?;
-                    let output = lua
+                    let lua = prepare_lua_ctx()?;
+
+                    // Serialize AdmissionRequest to Lua value
+                    let admission_req_lua_value = lua
+                        .to_value_with(
+                            &admission_req,
+                            mlua::SerializeOptions::new()
+                                .serialize_none_to_null(false)
+                                .serialize_unit_to_null(false),
+                        )
+                        .map_err(Error::ConvertAdmissionRequestToLuaValue)?;
+
+                    // Load Lua code chunk
+                    let lua_chunk = lua
                         .load(&code)
                         .set_name("rule code")
-                        .map_err(Error::SetLuaCodeName)?
-                        .eval_async()
+                        .map_err(Error::SetLuaCodeName)?;
+
+                    // Evaluate Lua code chunk as a function
+                    let output = lua_chunk
+                        .call_async(admission_req_lua_value)
                         .await
                         .map_err(Error::LuaEval)?;
                     Ok(output)
@@ -40,7 +55,7 @@ where
     rx.await.map_err(Error::RecvLuaThread)?
 }
 
-fn prepare_lua_ctx(admission_req: &AdmissionRequest<DynamicObject>) -> Result<Lua, Error> {
+fn prepare_lua_ctx() -> Result<Lua, Error> {
     let lua = Lua::new();
 
     lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
@@ -68,19 +83,6 @@ fn prepare_lua_ctx(admission_req: &AdmissionRequest<DynamicObject>) -> Result<Lu
         register_lua_function!("jsonpatch_diff", lua_jsonpatch_diff);
         register_lua_function!("kube_get", lua_kube_get, async);
         register_lua_function!("kube_list", lua_kube_list, async);
-
-        globals
-            .set(
-                "request",
-                lua.to_value_with(
-                    admission_req,
-                    mlua::SerializeOptions::new()
-                        .serialize_none_to_null(false)
-                        .serialize_unit_to_null(false),
-                )
-                .map_err(Error::ConvertAdmissionRequestToLuaValue)?,
-            )
-            .map_err(Error::SetGlobalAdmissionRequestValue)?;
     }
 
     Ok(lua)

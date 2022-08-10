@@ -35,8 +35,6 @@ enum Error {
     SetLuaValue(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
-    #[error("failed to set admission request to global Lua value: {0}")]
-    SetGlobalAdmissionRequestValue(#[source] mlua::Error),
     #[error("failed to create Tokio runtime: {0}")]
     CreateRuntime(#[source] std::io::Error),
     #[error("failed to set name for Lua code: {0}")]

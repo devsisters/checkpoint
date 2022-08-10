@@ -9,6 +9,7 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
+    request = ...
     if request.name:sub(-4) ~= "-uwu" then
       new_name = request.name .. "-uwu"
       return nil, {{op="replace", path="/metadata/name", value=new_name}}

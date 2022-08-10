@@ -9,6 +9,7 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
+    request = ...
     if request.name:sub(-4) ~= "-uwu" then
       return "That name is not cute."
     end
