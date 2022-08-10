@@ -9,6 +9,7 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
+    request = ...
     current_object = request.object
     if current_object.metadata.name:sub(-4) ~= "-uwu" then
       new_object = deepcopy(request.object)

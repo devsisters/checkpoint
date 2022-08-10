@@ -9,6 +9,7 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
+    request = ...
     requested_namespace_unique_annotation = (request.object.metadata.annotations or {})["unique"]
 
     namespaces = kube_list({group="", version="v1", kind="Namespace"}).items
