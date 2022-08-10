@@ -63,6 +63,7 @@ fn prepare_lua_ctx(admission_req: &AdmissionRequest<DynamicObject>) -> Result<Lu
             };
         }
 
+        register_lua_function!("debug_print", lua_debug_print);
         register_lua_function!("deepcopy", lua_deepcopy);
         register_lua_function!("jsonpatch_diff", lua_jsonpatch_diff);
         register_lua_function!("kube_get", lua_kube_get, async);
@@ -83,6 +84,15 @@ fn prepare_lua_ctx(admission_req: &AdmissionRequest<DynamicObject>) -> Result<Lu
     }
 
     Ok(lua)
+}
+
+fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
+    let v_json: serde_json::Value = lua.from_value(v)?;
+    tracing::info!(
+        "debug print fron Lua code: {}",
+        serde_json::to_string(&v_json).map_err(mlua::Error::external)?
+    );
+    Ok(())
 }
 
 fn lua_deepcopy<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<Value<'lua>> {
