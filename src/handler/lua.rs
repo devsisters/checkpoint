@@ -20,6 +20,9 @@ where
     let (tx, rx) = tokio::sync::oneshot::channel();
 
     // Spawn a thread dedicated to Lua
+    // Lua context is not Sync and returned future from Chunk::call_async is not Send.
+    // So we use a dedicated single thread for Lua context and block on that thread.
+    // But with a help of oneshot channel above, the HTTP handler thread is not blocked.
     std::thread::spawn(move || {
         let result = tokio::runtime::Builder::new_current_thread() // Prepare tokio single-threaded runtime
             .enable_all()
