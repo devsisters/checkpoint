@@ -9,6 +9,7 @@ use serde_json::Value as JsonValue;
 
 use super::Error;
 
+/// Evaluate Lua code and return its output
 pub(super) async fn eval_lua_code<T>(
     code: String,
     admission_req: AdmissionRequest<DynamicObject>,
@@ -17,12 +18,18 @@ where
     for<'a> T: mlua::FromLuaMulti<'a> + Send + 'static,
 {
     let (tx, rx) = tokio::sync::oneshot::channel();
+
+    // Spawn a thread dedicated to Lua
+    // Lua context is not Sync and returned future from Chunk::call_async is not Send.
+    // So we use a dedicated single thread for Lua context and block on that thread.
+    // But with a help of oneshot channel above, the HTTP handler thread is not blocked.
     std::thread::spawn(move || {
-        let result = tokio::runtime::Builder::new_current_thread()
+        let result = tokio::runtime::Builder::new_current_thread() // Prepare tokio single-threaded runtime
             .enable_all()
             .build()
             .map_err(Error::CreateRuntime)
             .and_then(|runtime| {
+                // Block on current thread
                 runtime.block_on(async move {
                     let lua = prepare_lua_ctx()?;
 
@@ -50,19 +57,24 @@ where
                     Ok(output)
                 })
             });
+        // Send result into oneshot channel
         let _ = tx.send(result);
     });
+
+    // Receive result from oneshot channel
     rx.await.map_err(Error::RecvLuaThread)?
 }
 
 fn prepare_lua_ctx() -> Result<Lua, Error> {
     let lua = Lua::new();
 
+    // Enable sandbox mode
     lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
 
     {
         let globals = lua.globals();
 
+        // Macro to register Lua helper functions
         macro_rules! register_lua_function {
             ($name:literal, $func:ident) => {
                 let f = lua
@@ -78,6 +90,7 @@ fn prepare_lua_ctx() -> Result<Lua, Error> {
             };
         }
 
+        // Register all Lua helper functions
         register_lua_function!("debug_print", lua_debug_print);
         register_lua_function!("deepcopy", lua_deepcopy);
         register_lua_function!("jsonpatch_diff", lua_jsonpatch_diff);
@@ -88,6 +101,7 @@ fn prepare_lua_ctx() -> Result<Lua, Error> {
     Ok(lua)
 }
 
+/// Lua helper function to debug-print Lua value with JSON format
 fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
     let v_json: serde_json::Value = lua.from_value(v)?;
     tracing::info!(
@@ -97,7 +111,9 @@ fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
     Ok(())
 }
 
+// Lua helper function to deep-copy a Lua value
 fn lua_deepcopy<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<Value<'lua>> {
+    // Convert Lua value to JSON value and convert back to deep-copy
     let v_json: serde_json::Value = lua.from_value(v)?;
     lua.to_value_with(
         &v_json,
@@ -107,6 +123,7 @@ fn lua_deepcopy<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<Value<'lua
     )
 }
 
+// Lua helper function to generate jsonpatch with diff of two table
 fn lua_jsonpatch_diff<'lua>(
     lua: &'lua Lua,
     (v1, v2): (Value<'lua>, Value<'lua>),
@@ -132,7 +149,9 @@ struct KubeGetArgument {
     name: String,
 }
 
+/// Lua helper function to get a Kubernetes resource
 async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<Value<'lua>> {
+    // Unpack argument
     let KubeGetArgument {
         group,
         version,
@@ -142,6 +161,7 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
         name,
     } = lua.from_value(argument)?;
 
+    // Prepare GroupVersionKind and ApiResource from argument
     let gvk = GroupVersionKind::gvk(&group, &version, &kind);
     let ar = if let Some(plural) = plural {
         ApiResource::from_gvk_with_plural(&gvk, &plural)
@@ -149,14 +169,20 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
         ApiResource::from_gvk(&gvk)
     };
 
+    // Prepare Kubernetes client from env
     let client = Client::try_default().await.map_err(mlua::Error::external)?;
+
+    // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
         Api::<Object<JsonValue, JsonValue>>::namespaced_with(client, &namespace, &ar)
     } else {
         Api::<Object<JsonValue, JsonValue>>::all_with(client, &ar)
     };
+
+    // Get object
     let object = api.get_opt(&name).await.map_err(mlua::Error::external)?;
 
+    // Serialize object into Lua value
     lua.to_value_with(
         &object,
         mlua::SerializeOptions::new()
@@ -190,7 +216,9 @@ struct KubeListArgumentListParams {
     continue_token: Option<String>,
 }
 
+/// Lua helper function to list Kubernetes resources
 async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<Value<'lua>> {
+    // Unpack argument
     let KubeListArgument {
         group,
         version,
@@ -219,6 +247,7 @@ async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Res
         )
         .unwrap_or_default();
 
+    // Prepare GroupVersionKind and ApiResource from argument
     let gvk = GroupVersionKind::gvk(&group, &version, &kind);
     let ar = if let Some(plural) = plural {
         ApiResource::from_gvk_with_plural(&gvk, &plural)
@@ -226,19 +255,25 @@ async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Res
         ApiResource::from_gvk(&gvk)
     };
 
+    // Prepare Kubernetes client from env
     let client = Client::try_default().await.map_err(mlua::Error::external)?;
+
+    // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
         Api::<Object<JsonValue, JsonValue>>::namespaced_with(client, &namespace, &ar)
     } else {
         Api::<Object<JsonValue, JsonValue>>::all_with(client, &ar)
     };
-    let object = api
+
+    // List objects
+    let object_list = api
         .list(&list_params)
         .await
         .map_err(mlua::Error::external)?;
 
+    // Serialize object list into Lua value
     lua.to_value_with(
-        &object,
+        &object_list,
         mlua::SerializeOptions::new()
             .serialize_none_to_null(false)
             .serialize_unit_to_null(false),

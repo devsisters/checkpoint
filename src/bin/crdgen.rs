@@ -1,3 +1,7 @@
+//! CRD generator
+//!
+//! Usage: `cargo run --bin crdgen > helm/template/customresourcedefinition.yaml`
+
 #[path = "../types.rs"]
 mod types;
 
