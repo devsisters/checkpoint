@@ -108,7 +108,7 @@ async fn validate(
         .ok_or(Error::RuleNotFound)?;
 
     // Evaluate Lua code and get `deny_reason`
-    let deny_reason: Option<String> = lua::eval_lua_code(vr.spec.code, req.clone()).await?;
+    let deny_reason: Option<String> = lua::eval_lua_code(vr.spec.0.code, req.clone()).await?;
 
     // Prepare AdmissionResponse from AddmissionRequest
     let resp: AdmissionResponse = req.into();
@@ -178,7 +178,7 @@ async fn mutate(
 
     // Evaluate Lua code and get `deny_reason` and `patch`
     let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) =
-        lua::eval_lua_code(mr.spec.code, req.clone()).await?;
+        lua::eval_lua_code(mr.spec.0.code, req.clone()).await?;
 
     // Prepare AdmissionResponse from AdmissionRequest
     let resp: AdmissionResponse = req.into();

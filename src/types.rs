@@ -25,36 +25,29 @@ impl fmt::Display for FailurePolicy {
     }
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, CustomResource, Clone, Debug)]
-#[kube(
-    group = "checkpoint.devsisters.com",
-    version = "v1",
-    kind = "ValidatingRule",
-    shortname = "vr",
-    status = "ValidatingRuleStatus"
-)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct ValidatingRuleSpec {
-    /// FailurePolicy for ValidatingWebhookConfiguration.
+pub struct RuleSpec {
+    /// FailurePolicy for webhook configuration.
     ///
     /// FailurePolicy defines how unrecognized errors from the admission endpoint are handled - allowed values are Ignore or Fail.
     /// Defaults to Fail.
     pub failure_policy: Option<FailurePolicy>,
-    /// NamespaceSelector for ValidatingWebhookConfiguration.
+    /// NamespaceSelector for webhook configuration.
     ///
     /// NamespaceSelector decides wheter to run the Rule on an object based on whether the namespace for that object matches the selector.
     pub namespace_selector: Option<LabelSelector>,
-    /// ObjectSelector for ValidatingWebhookConfiguration
+    /// ObjectSelector for webhook configuration.
     ///
     /// ObjectSelector decides whether to run the Rule based on if the object has matching labels.
     /// Default to the empty LabelSelector, which matches everything.
     pub object_selector: Option<LabelSelector>,
-    /// ObjectRules for Rules field in ValidatingWebhookConfiguration
+    /// ObjectRules for Rules field in webhook configuration.
     ///
     /// ObjectRules describes what operations on what resources/subresources the Rule cares about.
     /// Default to the empty LabelSelector, which matches everything.
     pub object_rules: Option<Vec<RuleWithOperations>>,
-    /// TimeoutSeconds for ValidatingWebhookConfiguration.
+    /// TimeoutSeconds for webhook configuration..
     ///
     /// TimeoutSeconds specifies the timeout for this Rule.
     /// Default to 10 seconds.
@@ -66,7 +59,22 @@ pub struct ValidatingRuleSpec {
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct ValidatingRuleStatus {}
+pub struct RuleStatus {}
+
+#[derive(Serialize, Deserialize, JsonSchema, CustomResource, Clone, Debug)]
+#[kube(
+    group = "checkpoint.devsisters.com",
+    version = "v1",
+    kind = "ValidatingRule",
+    shortname = "vr",
+    status = "ValidatingRuleStatus"
+)]
+#[serde(transparent)]
+pub struct ValidatingRuleSpec(pub RuleSpec);
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+#[serde(transparent)]
+pub struct ValidatingRuleStatus(pub RuleStatus);
 
 #[derive(Serialize, Deserialize, JsonSchema, CustomResource, Clone, Debug)]
 #[kube(
@@ -76,37 +84,8 @@ pub struct ValidatingRuleStatus {}
     shortname = "mr",
     status = "MutatingRuleStatus"
 )]
-#[serde(rename_all = "camelCase")]
-pub struct MutatingRuleSpec {
-    /// FailurePolicy for MutatingWebhookConfiguration.
-    ///
-    /// FailurePolicy defines how unrecognized errors from the admission endpoint are handled - allowed values are Ignore or Fail.
-    /// Defaults to Fail.
-    pub failure_policy: Option<FailurePolicy>,
-    /// NamespaceSelector for MutatingWebhookConfiguration.
-    ///
-    /// NamespaceSelector decides wheter to run the Rule on an object based on whether the namespace for that object matches the selector.
-    pub namespace_selector: Option<LabelSelector>,
-    /// ObjectSelector for MutatingWebhookConfiguration
-    ///
-    /// ObjectSelector decides whether to run the Rule based on if the object has matching labels.
-    /// Default to the empty LabelSelector, which matches everything.
-    pub object_selector: Option<LabelSelector>,
-    /// ObjectRules for Rules field in MutatingWebhookConfiguration
-    ///
-    /// ObjectRules describes what operations on what resources/subresources the Rule cares about.
-    /// Default to the empty LabelSelector, which matches everything.
-    pub object_rules: Option<Vec<RuleWithOperations>>,
-    /// TimeoutSeconds for MutatingWebhookConfiguration.
-    ///
-    /// TimeoutSeconds specifies the timeout for this Rule.
-    /// Default to 10 seconds.
-    pub timeout_seconds: Option<i32>,
-
-    /// Lua code to evaluate when validating request.
-    pub code: String,
-}
+pub struct MutatingRuleSpec(pub RuleSpec);
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct MutatingRuleStatus {}
+#[serde(transparent)]
+pub struct MutatingRuleStatus(pub RuleStatus);
