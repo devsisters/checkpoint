@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "checkpoint.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       {{- include "checkpoint.selectorLabels" . | nindent 6 }}
