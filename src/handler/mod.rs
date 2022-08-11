@@ -27,6 +27,8 @@ pub fn create_app(kube_client: kube::Client) -> Router {
 enum Error {
     #[error("rule not found")]
     RuleNotFound,
+    #[error("Lua app data not found. This is a bug.")]
+    LuaAppDataNotFound,
     #[error("serviceAccount is not provided. You should provide serviceAccount field in Rule spec if you want to use `kube_get` or `kube_list` function in Lua code.")]
     ServiceAccountInfoNotProvided,
     #[error("ServiceAccount does not have Secret reference")]
@@ -35,6 +37,10 @@ enum Error {
     ServiceAccountSecretDataDoesNotHaveKey(&'static str),
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
+    #[error("Kubernetes in-cluster config error: {0}")]
+    KubernetesInClusterConfig(#[source] kube::config::InClusterError),
+    #[error("Kubernetes Kubeconfig error: {0}")]
+    KubernetesKubeconfig(#[source] kube::config::KubeconfigError),
     #[error("failed to set Lua sandbox mode: {0}")]
     SetLuaSandbox(#[source] mlua::Error),
     #[error("failed to create Lua function: {0}")]
