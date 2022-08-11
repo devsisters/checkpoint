@@ -25,16 +25,20 @@ pub fn create_app(kube_client: kube::Client) -> Router {
 /// Errors can be raised within HTTP handler
 #[derive(thiserror::Error, Debug)]
 enum Error {
-    #[error("rule not found")]
+    #[error("Rule is not found")]
     RuleNotFound,
     #[error("Lua app data not found. This is a bug.")]
     LuaAppDataNotFound,
-    #[error("serviceAccount is not provided. You should provide serviceAccount field in Rule spec if you want to use `kube_get` or `kube_list` function in Lua code.")]
+    #[error("serviceAccount field is not provided. You should provide serviceAccount field in Rule spec if you want to use `kube_get` or `kube_list` function in Lua code.")]
     ServiceAccountInfoNotProvided,
+    #[error("provided ServiceAccount is not found")]
+    ServiceAccountNotFound,
     #[error("ServiceAccount does not have Secret reference")]
     ServiceAccountDoesNotHaveSecretReference,
     #[error("ServiceAccount Secret data does not have following key: {0}")]
     ServiceAccountSecretDataDoesNotHaveKey(&'static str),
+    #[error("ServiceAccount Secret is not found")]
+    ServiceAccountSecretNotFound,
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
     #[error("Kubernetes in-cluster config error: {0}")]

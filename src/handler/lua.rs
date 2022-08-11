@@ -87,9 +87,10 @@ async fn prepare_kube_client(
     let secret_api = Api::<Secret>::namespaced(client, &serviceaccount_info.namespace);
 
     let serviceaccount = serviceaccount_api
-        .get(&serviceaccount_info.name)
+        .get_opt(&serviceaccount_info.name)
         .await
-        .map_err(Error::Kubernetes)?;
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::ServiceAccountNotFound)?;
     // Extract Secret name from ServiceAccount
     let secret_name = serviceaccount
         .secrets
@@ -98,9 +99,10 @@ async fn prepare_kube_client(
         .and_then(|or| or.name.clone())
         .ok_or(Error::ServiceAccountDoesNotHaveSecretReference)?;
     let secret = secret_api
-        .get(&secret_name)
+        .get_opt(&secret_name)
         .await
-        .map_err(Error::Kubernetes)?;
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::ServiceAccountSecretNotFound)?;
 
     // Extract Secret data
     let secret_data = secret.data.unwrap_or_default();
