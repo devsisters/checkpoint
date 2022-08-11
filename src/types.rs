@@ -61,6 +61,8 @@ pub struct RuleSpec {
     pub timeout_seconds: Option<i32>,
 
     /// The name of ServiceAccount to use to run Lua code.
+    ///
+    /// If you want to use `kube_get` or `kube_list` function in Lua code, you must provide ServiceAccount info with this field.
     pub service_account: Option<ServiceAccountInfo>,
 
     /// Lua code to evaluate when validating request.
