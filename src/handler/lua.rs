@@ -1,3 +1,6 @@
+use std::cell::Ref;
+
+use k8s_openapi::api::core::v1::{Secret, ServiceAccount};
 use kube::{
     api::{ApiResource, ListParams},
     core::{admission::AdmissionRequest, DynamicObject, GroupVersionKind, Object},
@@ -7,10 +10,18 @@ use mlua::{Lua, LuaSerdeExt, Value};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
+use crate::types::ServiceAccountInfo;
+
 use super::Error;
+
+struct LuaContextAppData {
+    kube_client: Option<Client>,
+}
 
 /// Evaluate Lua code and return its output
 pub(super) async fn eval_lua_code<T>(
+    client: Client,
+    serviceaccount_info: Option<ServiceAccountInfo>,
     code: String,
     admission_req: AdmissionRequest<DynamicObject>,
 ) -> Result<T, Error>
@@ -31,7 +42,7 @@ where
             .and_then(|runtime| {
                 // Block on current thread
                 runtime.block_on(async move {
-                    let lua = prepare_lua_ctx()?;
+                    let lua = prepare_lua_ctx(client, serviceaccount_info).await?;
 
                     // Serialize AdmissionRequest to Lua value
                     let admission_req_lua_value = lua
@@ -65,8 +76,116 @@ where
     rx.await.map_err(Error::RecvLuaThread)?
 }
 
-fn prepare_lua_ctx() -> Result<Lua, Error> {
+/// Prepare Kubernetes client with specified ServiceAccount info in Rule spec
+async fn prepare_kube_client(
+    client: Client,
+    serviceaccount_info: ServiceAccountInfo,
+) -> Result<kube::Client, Error> {
+    // Prepare Kubernetes APIs
+    let serviceaccount_api =
+        Api::<ServiceAccount>::namespaced(client.clone(), &serviceaccount_info.namespace);
+    let secret_api = Api::<Secret>::namespaced(client, &serviceaccount_info.namespace);
+
+    let serviceaccount = serviceaccount_api
+        .get_opt(&serviceaccount_info.name)
+        .await
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::ServiceAccountNotFound)?;
+    // Extract Secret name from ServiceAccount
+    let secret_name = serviceaccount
+        .secrets
+        .unwrap_or_default()
+        .get(0)
+        .and_then(|or| or.name.clone())
+        .ok_or(Error::ServiceAccountDoesNotHaveSecretReference)?;
+    let secret = secret_api
+        .get_opt(&secret_name)
+        .await
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::ServiceAccountSecretNotFound)?;
+
+    // Extract Secret data
+    let secret_data = secret.data.unwrap_or_default();
+    macro_rules! get {
+        ($key:expr) => {
+            secret_data
+                .get($key)
+                .ok_or(Error::ServiceAccountSecretDataDoesNotHaveKey($key))?
+        };
+    }
+    let ca_crt = base64::encode(&get!("ca.crt").0);
+    let namespace = String::from_utf8_lossy(&get!("namespace").0);
+    let token = String::from_utf8_lossy(&get!("token").0);
+
+    // Default config from env
+    let env_default_config =
+        kube::Config::from_cluster_env().map_err(Error::KubernetesInClusterConfig)?;
+
+    // Populate Kubeconfig, and convert it back to Config
+    // We should use this hack because kube crate does not allow modifying AuthInfo of Config
+    // Reference: https://github.com/kube-rs/kube-rs/discussions/957
+    // We can directly modify AuthInfo when https://github.com/kube-rs/kube-rs/pull/959 is released
+
+    // Populated Kubeconfig from ServiceAccount Secret data and default env config
+    const DEFAULT: &str = "default";
+    let kube_config = kube::config::Kubeconfig {
+        current_context: Some(DEFAULT.to_string()),
+        contexts: vec![kube::config::NamedContext {
+            name: DEFAULT.to_string(),
+            context: kube::config::Context {
+                cluster: DEFAULT.to_string(),
+                user: DEFAULT.to_string(),
+                namespace: Some(namespace.to_string()),
+                extensions: None,
+            },
+        }],
+        auth_infos: vec![kube::config::NamedAuthInfo {
+            name: DEFAULT.to_string(),
+            auth_info: kube::config::AuthInfo {
+                token: Some(secrecy::SecretString::new(token.to_string())),
+                ..Default::default()
+            },
+        }],
+        clusters: vec![kube::config::NamedCluster {
+            name: DEFAULT.to_string(),
+            cluster: kube::config::Cluster {
+                server: env_default_config.cluster_url.to_string(),
+                insecure_skip_tls_verify: Some(env_default_config.accept_invalid_certs),
+                certificate_authority: None,
+                certificate_authority_data: Some(ca_crt),
+                proxy_url: env_default_config.proxy_url.map(|url| url.to_string()),
+                extensions: None,
+            },
+        }],
+        ..Default::default()
+    };
+    // Convert it back to Config
+    let config = kube::Config::from_custom_kubeconfig(kube_config, &Default::default())
+        .await
+        .map_err(Error::KubernetesKubeconfig)?;
+
+    let new_client = Client::try_from(config).map_err(Error::Kubernetes)?;
+
+    Ok(new_client)
+}
+
+async fn prepare_lua_ctx(
+    client: Client,
+    serviceaccount_info: Option<ServiceAccountInfo>,
+) -> Result<Lua, Error> {
+    // Prepare app data
+    // Create Kubernetes client which is restricted with provided ServiceAccount
+    let restricted_client = if let Some(serviceaccount_info) = serviceaccount_info {
+        Some(prepare_kube_client(client, serviceaccount_info).await?)
+    } else {
+        None
+    };
+    let app_data = LuaContextAppData {
+        kube_client: restricted_client,
+    };
+
     let lua = Lua::new();
+    lua.set_app_data(app_data);
 
     // Enable sandbox mode
     lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
@@ -139,6 +258,16 @@ fn lua_jsonpatch_diff<'lua>(
     )
 }
 
+fn extract_kube_client_from_lua_ctx(lua: &Lua) -> mlua::Result<Client> {
+    let app_data: Ref<LuaContextAppData> = lua
+        .app_data_ref()
+        .ok_or_else(|| mlua::Error::external(Error::LuaAppDataNotFound))?;
+    app_data
+        .kube_client
+        .clone()
+        .ok_or_else(|| mlua::Error::external(Error::ServiceAccountInfoNotProvided))
+}
+
 #[derive(Deserialize, Debug, Clone)]
 struct KubeGetArgument {
     group: String,
@@ -169,8 +298,7 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
         ApiResource::from_gvk(&gvk)
     };
 
-    // Prepare Kubernetes client from env
-    let client = Client::try_default().await.map_err(mlua::Error::external)?;
+    let client = extract_kube_client_from_lua_ctx(lua)?;
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
@@ -255,8 +383,7 @@ async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Res
         ApiResource::from_gvk(&gvk)
     };
 
-    // Prepare Kubernetes client from env
-    let client = Client::try_default().await.map_err(mlua::Error::external)?;
+    let client = extract_kube_client_from_lua_ctx(lua)?;
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
