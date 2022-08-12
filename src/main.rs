@@ -1,5 +1,6 @@
 mod config;
 mod handler;
+mod leader_election;
 mod reconcile;
 mod types;
 
@@ -44,7 +45,9 @@ async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let client = kube::Client::try_default().await?;
+    let kube_config = kube::Config::infer().await?;
+    let default_namespace = kube_config.default_namespace.clone();
+    let client: kube::Client = kube_config.try_into()?;
 
     // Prepare HTTP app
     let http_app = crate::handler::create_app(client.clone());
@@ -62,6 +65,7 @@ async fn main() -> Result<()> {
     let (shutdown_signal_broadcast_tx, mut shutdown_signal_broadcast_rx1) =
         tokio::sync::broadcast::channel::<()>(1);
     let mut shutdown_signal_broadcast_rx2 = shutdown_signal_broadcast_tx.subscribe();
+    let mut shutdown_signal_broadcast_rx3 = shutdown_signal_broadcast_tx.subscribe();
     tokio::spawn(async move {
         shutdown_signal_fut.await;
         let _ = shutdown_signal_broadcast_tx.send(());
@@ -73,6 +77,26 @@ async fn main() -> Result<()> {
             .handle(axum_server_handle)
             .serve(http_app.into_make_service()),
     );
+
+    // Leader election
+    // Acquire lease
+    let hostname = hostname::get()?;
+    let hostname = hostname.to_string_lossy();
+    let lease_fut = crate::leader_election::Lease::acquire_or_create(
+        client.clone(),
+        &default_namespace,
+        "checkpoint.devsisters.com",
+        &hostname,
+    );
+    let lease = tokio::select! {
+        lease = lease_fut => {
+            lease?
+        }
+        _ = shutdown_signal_broadcast_rx3.recv() => {
+            // Early exit when shutdown signal is received
+            return Ok(());
+        }
+    };
 
     // Prepare Kubernetes APIs
     let vr_api = Api::<crate::types::ValidatingRule>::all(client.clone());
@@ -123,7 +147,13 @@ async fn main() -> Result<()> {
     );
 
     // Await all spawned futures
-    let (res, (), ()) = tokio::try_join!(http_handle, vr_controller_handle, mr_controller_handle)?;
+    let res = tokio::try_join!(http_handle, vr_controller_handle, mr_controller_handle);
+
+    // Release lease
+    lease.join().await?;
+
+    // Unwrap all results
+    let (res, (), ()) = res?;
     res?;
 
     Ok(())

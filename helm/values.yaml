@@ -1,3 +1,5 @@
+replicaCount: 2
+
 image:
   repository: checkpoint
   pullPolicy: IfNotPresent
