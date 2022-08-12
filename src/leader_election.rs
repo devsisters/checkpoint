@@ -106,6 +106,8 @@ impl Lease {
         let renew_object_name = lease_name.to_string();
         let renew_lease_duration_seconds =
             lease.spec.as_ref().unwrap().lease_duration_seconds.unwrap();
+        // Subtract one second to ensure no time lag issue
+        let renew_lease_duration_seconds = renew_lease_duration_seconds - 1;
 
         // Spawn a task that renews lease object
         let join_handle = tokio::spawn(async move {
