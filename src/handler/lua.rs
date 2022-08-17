@@ -3,7 +3,7 @@ use std::cell::Ref;
 use k8s_openapi::api::core::v1::{Secret, ServiceAccount};
 use kube::{
     api::{ApiResource, ListParams},
-    core::{admission::AdmissionRequest, DynamicObject, GroupVersionKind, Object},
+    core::{admission::AdmissionRequest, GroupVersionKind, Object},
     Api, Client,
 };
 use mlua::{Lua, LuaSerdeExt, Value};
@@ -12,7 +12,7 @@ use serde_json::Value as JsonValue;
 
 use crate::types::ServiceAccountInfo;
 
-use super::Error;
+use super::{Error, MetadataLessDynamicObjectForAdmissionReview};
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
@@ -23,7 +23,7 @@ pub(super) async fn eval_lua_code<T>(
     client: Client,
     serviceaccount_info: Option<ServiceAccountInfo>,
     code: String,
-    admission_req: AdmissionRequest<DynamicObject>,
+    admission_req: AdmissionRequest<MetadataLessDynamicObjectForAdmissionReview>,
 ) -> Result<T, Error>
 where
     for<'a> T: mlua::FromLuaMulti<'a> + Send + 'static,
