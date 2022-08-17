@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
+rules:
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
+subjects:
+- kind: ServiceAccount
+  name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
+  namespace: default
+---
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: block-pod-exec-by-namespace-annotation
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["pods/exec"]
+    operations: ["CONNECT"]
+  serviceAccount:
+    namespace: default
+    name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
+  code: |
+    request = ...
+    namespace = kube_get({group="", version="v1", kind="Namespace", name=request.namespace})
+    namespace_annotations = namespace.metadata.annotations or {}
+    if namespace_annotations["block-exec"] == "true" then
+      return "Pod exec is blocked in this namespace"
+    end
