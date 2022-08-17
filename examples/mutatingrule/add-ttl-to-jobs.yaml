@@ -1,0 +1,28 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: MutatingRule
+metadata:
+  name: add-ttl-to-jobs
+spec:
+  objectRules:
+  - apiGroups: ["batch"]
+    apiVersions: ["*"]
+    resources: ["jobs"]
+    operations: ["CREATE"]
+  code: |
+    -- Config
+    ttlSecondsAfterFinished = 600
+
+    request = ...
+    -- Skip if ownerReference is specified
+    if request.object.metadata.owenerReferences ~= nil and #request.object.metadata.owenerReferences ~= 0 then
+      return
+    end
+    -- Skip if ttlSecondsAfterFinished is already specified
+    if request.object.spec.ttlSecondsAfterFinished ~= nil then
+      return
+    end
+
+    new_object = deepcopy(request.object)
+    new_object.spec.ttlSecondsAfterFinished = ttlSecondsAfterFinished
+    diff = jsonpatch_diff(request.object, new_object)
+    return nil, diff
