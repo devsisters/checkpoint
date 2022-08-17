@@ -19,6 +19,7 @@ pub fn create_app(kube_client: kube::Client) -> Router {
         .route("/ping", routing::get(ping))
         .route("/validate/:rule_name", routing::post(validate_handler))
         .route("/mutate/:rule_name", routing::post(mutate_handler))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(extract::Extension(kube_client))
 }
 
