@@ -12,7 +12,7 @@ use serde_json::Value as JsonValue;
 
 use crate::types::ServiceAccountInfo;
 
-use super::{Error, MetadataLessDynamicObjectForAdmissionReview};
+use super::{DynamicObjectWithOptionalMetadata, Error};
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
@@ -23,7 +23,7 @@ pub(super) async fn eval_lua_code<T>(
     client: Client,
     serviceaccount_info: Option<ServiceAccountInfo>,
     code: String,
-    admission_req: AdmissionRequest<MetadataLessDynamicObjectForAdmissionReview>,
+    admission_req: AdmissionRequest<DynamicObjectWithOptionalMetadata>,
 ) -> Result<T, Error>
 where
     for<'a> T: mlua::FromLuaMulti<'a> + Send + 'static,

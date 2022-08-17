@@ -7,7 +7,7 @@ use json_patch::{Patch, PatchOperation};
 use kube::{
     core::{
         admission::{AdmissionRequest, AdmissionResponse, AdmissionReview, SerializePatchError},
-        DynamicObject, ObjectMeta,
+        DynamicObject, ObjectMeta, TypeMeta,
     },
     discovery::ApiResource,
     Api, Resource,
@@ -81,11 +81,22 @@ impl response::IntoResponse for Error {
 }
 
 /// Some resource (e.g. PoidExecOptions) does not have `metadata`. But `kube` crate expects all resources have `metadata`.
-/// So we create a custom `DynamicObject` that can have no `metadata`. Use for `AdmissionReview` only!
-#[derive(Deserialize, Serialize, Clone)]
-struct MetadataLessDynamicObjectForAdmissionReview(serde_json::Value);
+/// So we create a custom `DynamicObject` that can use default `ObjectMeta` when deserializing.
+#[derive(Deserialize, Serialize, Clone, Debug)]
+struct DynamicObjectWithOptionalMetadata {
+    /// The type fields, not always present
+    #[serde(flatten, default)]
+    pub types: Option<TypeMeta>,
+    /// Object metadata
+    #[serde(default)]
+    pub metadata: ObjectMeta,
 
-impl Resource for MetadataLessDynamicObjectForAdmissionReview {
+    /// All other keys
+    #[serde(flatten)]
+    pub data: serde_json::Value,
+}
+
+impl Resource for DynamicObjectWithOptionalMetadata {
     type DynamicType = ApiResource;
 
     fn group(dt: &ApiResource) -> Cow<'_, str> {
@@ -109,11 +120,11 @@ impl Resource for MetadataLessDynamicObjectForAdmissionReview {
     }
 
     fn meta(&self) -> &ObjectMeta {
-        panic!("This method `meta` should not be called. This is a bug.")
+        &self.metadata
     }
 
     fn meta_mut(&mut self) -> &mut ObjectMeta {
-        panic!("This method `meta_mut` should not be called. This is a bug.")
+        &mut self.metadata
     }
 }
 
@@ -125,7 +136,7 @@ async fn ping() -> &'static str {
 async fn validate_handler(
     extract::Extension(kube_client): extract::Extension<kube::Client>,
     extract::Path(rule_name): extract::Path<String>,
-    extract::Json(req): extract::Json<AdmissionReview<MetadataLessDynamicObjectForAdmissionReview>>,
+    extract::Json(req): extract::Json<AdmissionReview<DynamicObjectWithOptionalMetadata>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
     // Convert AdmissionReview into AdmissionRequest
     // and reject if fails
@@ -153,7 +164,7 @@ async fn validate_handler(
 async fn validate(
     client: kube::Client,
     rule_name: &str,
-    req: &AdmissionRequest<MetadataLessDynamicObjectForAdmissionReview>,
+    req: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
 ) -> Result<AdmissionResponse, Error> {
     // Prepare Kubernetes API
     let vr_api = Api::<ValidatingRule>::all(client.clone());
@@ -190,7 +201,7 @@ async fn validate(
 async fn mutate_handler(
     extract::Extension(kube_client): extract::Extension<kube::Client>,
     extract::Path(rule_name): extract::Path<String>,
-    extract::Json(req): extract::Json<AdmissionReview<MetadataLessDynamicObjectForAdmissionReview>>,
+    extract::Json(req): extract::Json<AdmissionReview<DynamicObjectWithOptionalMetadata>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
     // Convert AdmissionReview into AdmissionRequest
     // and reject if fails
@@ -228,7 +239,7 @@ impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
 async fn mutate(
     client: kube::Client,
     rule_name: &str,
-    req: &AdmissionRequest<MetadataLessDynamicObjectForAdmissionReview>,
+    req: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
 ) -> Result<AdmissionResponse, Error> {
     // Prepare Kubernetes API
     let mr_api = Api::<MutatingRule>::all(client.clone());
