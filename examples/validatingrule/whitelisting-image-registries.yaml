@@ -29,7 +29,12 @@ spec:
       if index == nil then
         return "docker.io"
       else
-        return string.sub(image, 1, index - 1)
+        local prefix = string.sub(image, 1, index - 1)
+        if string.find(prefix, ".", 1, true) == nil then  -- if `prefix` is username in docker hub
+          return "docker.io"
+        else
+          return prefix
+        end
       end
     end
  
