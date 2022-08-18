@@ -41,14 +41,14 @@ spec:
     name: checkpoint-validatingrule-namespace-must-have-unique-annotation
   code: |
     request = ...
-    requested_namespace_unique_annotation = (request.object.metadata.annotations or {})["unique"]
+    requestedNamespaceUniqueAnnotation = (request.object.metadata.annotations or {})["unique"]
 
-    namespaces = kube_list({group="", version="v1", kind="Namespace"}).items
+    namespaces = kubeList({group="", version="v1", kind="Namespace"}).items
 
     for _, namespace in namespaces do
-      unique_annotation = (namespace.metadata.annotations or {})["unique"]
+      uniqueAnnotation = (namespace.metadata.annotations or {})["unique"]
 
-      if unique_annotation ~= nil and requested_namespace_unique_annotation == unique_annotation then
+      if uniqueAnnotation ~= nil and requestedNamespaceUniqueAnnotation == uniqueAnnotation then
         return "Requested namespace has a not unique `unique` annotation"
       end
     end

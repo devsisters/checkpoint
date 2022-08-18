@@ -210,11 +210,11 @@ async fn prepare_lua_ctx(
         }
 
         // Register all Lua helper functions
-        register_lua_function!("debug_print", lua_debug_print);
+        register_lua_function!("debugPrint", lua_debug_print);
         register_lua_function!("deepcopy", lua_deepcopy);
-        register_lua_function!("jsonpatch_diff", lua_jsonpatch_diff);
-        register_lua_function!("kube_get", lua_kube_get, async);
-        register_lua_function!("kube_list", lua_kube_list, async);
+        register_lua_function!("jsonpatchDiff", lua_jsonpatch_diff);
+        register_lua_function!("kubeGet", lua_kube_get, async);
+        register_lua_function!("kubeList", lua_kube_list, async);
     }
 
     Ok(lua)

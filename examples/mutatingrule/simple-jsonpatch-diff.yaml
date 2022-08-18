@@ -10,10 +10,9 @@ spec:
     operations: ["CREATE"]
   code: |
     request = ...
-    current_object = request.object
-    if current_object.metadata.name:sub(-4) ~= "-uwu" then
-      new_object = deepcopy(request.object)
-      new_object.metadata.name = current_object.metadata.name .. "-uwu"
-      patch = jsonpatch_diff(current_object, new_object)
+    if request.object.metadata.name:sub(-4) ~= "-uwu" then
+      newObject = deepcopy(request.object)
+      newObject.metadata.name = request.object.metadata.name .. "-uwu"
+      patch = jsonpatchDiff(request.object, newObject)
       return nil, patch
     end

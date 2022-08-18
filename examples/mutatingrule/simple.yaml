@@ -11,6 +11,5 @@ spec:
   code: |
     request = ...
     if request.name:sub(-4) ~= "-uwu" then
-      new_name = request.name .. "-uwu"
-      return nil, {{op="replace", path="/metadata/name", value=new_name}}
+      return nil, {{op="replace", path="/metadata/name", value=request.name .. "-uwu"}}
     end
