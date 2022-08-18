@@ -9,19 +9,21 @@ spec:
     resources: ["pods"]
     operations: ["CREATE"]
   code: |
-    request = ...
+    -- Config
     allowedRegistries = {"docker.io", "k8s.gcr.io"}
 
+    -- Check image of containers, returns nil if validation was passed
     function checkContainers(containers)
       local container
       for _, container in pairs(containers) do
         local registry = getRegistry(container.image)
         if not contains(allowedRegistries, registry) then
-          return "Image registry \"" .. registry .. "\" is not in the white list"
+          return "Image registry `" .. registry .. "` is not in the white list"
         end
       end
     end
 
+    -- Get registry from image path
     function getRegistry(image)
       local _, index = string.find(image, "/")
       if index == nil then
@@ -31,6 +33,7 @@ spec:
       end
     end
  
+    -- Check if `array` contains `value`
     function contains(array, value)
       local element
       for _, element in pairs(array) do
@@ -42,6 +45,7 @@ spec:
     end
  
 
+    request = ...
     if request.object.spec.initContainers ~= nil then
       result = checkContainers(request.object.spec.initContainers)
       if result ~= nil then
