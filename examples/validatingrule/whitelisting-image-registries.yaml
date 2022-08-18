@@ -1,0 +1,55 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: whitelisting-image-registries
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["pods"]
+    operations: ["CREATE"]
+  code: |
+    request = ...
+    allowed_registries = {"docker.io", "k8s.gcr.io"}
+
+    function check_containers(containers)
+      local container
+      for _, container in pairs(containers) do
+        local registry = get_registry(container.image)
+        if not contains(allowed_registries, registry) then
+          return "Image registry \"" .. registry .. "\" is not in the white list"
+        end
+      end
+    end
+
+    function get_registry(image)
+      local _, index = string.find(image, "/")
+      if index == nil then
+        return "docker.io"
+      else
+        return string.sub(image, 1, index - 1)
+      end
+    end
+ 
+    function contains(array, value)
+      local element
+      for _, element in pairs(array) do
+        if element == value then
+          return true
+        end
+      end
+      return false
+    end
+ 
+
+    if request.object.spec.initContainers ~= nil then
+      result = check_containers(request.object.spec.initContainers)
+      if result ~= nil then
+        return result
+      end
+    end
+
+    result = check_containers(request.object.spec.containers)
+    if result ~= nil then
+      return result
+    end
