@@ -10,19 +10,19 @@ spec:
     operations: ["CREATE"]
   code: |
     request = ...
-    allowed_registries = {"docker.io", "k8s.gcr.io"}
+    allowedRegistries = {"docker.io", "k8s.gcr.io"}
 
-    function check_containers(containers)
+    function checkContainers(containers)
       local container
       for _, container in pairs(containers) do
-        local registry = get_registry(container.image)
-        if not contains(allowed_registries, registry) then
+        local registry = getRegistry(container.image)
+        if not contains(allowedRegistries, registry) then
           return "Image registry \"" .. registry .. "\" is not in the white list"
         end
       end
     end
 
-    function get_registry(image)
+    function getRegistry(image)
       local _, index = string.find(image, "/")
       if index == nil then
         return "docker.io"
@@ -43,13 +43,13 @@ spec:
  
 
     if request.object.spec.initContainers ~= nil then
-      result = check_containers(request.object.spec.initContainers)
+      result = checkContainers(request.object.spec.initContainers)
       if result ~= nil then
         return result
       end
     end
 
-    result = check_containers(request.object.spec.containers)
+    result = checkContainers(request.object.spec.containers)
     if result ~= nil then
       return result
     end
