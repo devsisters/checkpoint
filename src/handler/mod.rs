@@ -38,12 +38,8 @@ enum Error {
     ServiceAccountInfoNotProvided,
     #[error("provided ServiceAccount is not found")]
     ServiceAccountNotFound,
-    #[error("ServiceAccount does not have Secret reference")]
-    ServiceAccountDoesNotHaveSecretReference,
-    #[error("ServiceAccount Secret data does not have following key: {0}")]
-    ServiceAccountSecretDataDoesNotHaveKey(&'static str),
-    #[error("ServiceAccount Secret is not found")]
-    ServiceAccountSecretNotFound,
+    #[error("failed to request ServiceAccount token")]
+    RequestServiceAccountToken,
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
     #[error("Kubernetes in-cluster config error: {0}")]
@@ -180,6 +176,7 @@ async fn validate(
     let deny_reason: Option<String> = lua::eval_lua_code(
         client,
         vr.spec.0.service_account,
+        vr.spec.0.timeout_seconds,
         vr.spec.0.code,
         req.clone(),
     )
@@ -255,6 +252,7 @@ async fn mutate(
     let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) = lua::eval_lua_code(
         client,
         mr.spec.0.service_account,
+        mr.spec.0.timeout_seconds,
         mr.spec.0.code,
         req.clone(),
     )

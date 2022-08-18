@@ -1,10 +1,13 @@
 use std::cell::Ref;
 
-use k8s_openapi::api::core::v1::{Secret, ServiceAccount};
+use k8s_openapi::api::{
+    authentication::v1::{TokenRequest, TokenRequestSpec},
+    core::v1::ServiceAccount,
+};
 use kube::{
     api::{ApiResource, ListParams},
     core::{admission::AdmissionRequest, GroupVersionKind, Object},
-    Api, Client,
+    Api, Client, Resource,
 };
 use mlua::{Lua, LuaSerdeExt, Value};
 use serde::Deserialize;
@@ -22,6 +25,7 @@ struct LuaContextAppData {
 pub(super) async fn eval_lua_code<T>(
     client: Client,
     serviceaccount_info: Option<ServiceAccountInfo>,
+    timeout_seconds: Option<i32>,
     code: String,
     admission_req: AdmissionRequest<DynamicObjectWithOptionalMetadata>,
 ) -> Result<T, Error>
@@ -42,7 +46,7 @@ where
             .and_then(|runtime| {
                 // Block on current thread
                 runtime.block_on(async move {
-                    let lua = prepare_lua_ctx(client, serviceaccount_info).await?;
+                    let lua = prepare_lua_ctx(client, serviceaccount_info, timeout_seconds).await?;
 
                     // Serialize AdmissionRequest to Lua value
                     let admission_req_lua_value = lua
@@ -76,46 +80,67 @@ where
     rx.await.map_err(Error::RecvLuaThread)?
 }
 
+/// Create a TokenRequest of a ServiceAccount
+///
+/// Workaround before https://github.com/kube-rs/kube-rs/pull/989 is merged and released.
+async fn create_token_request(
+    client: Client,
+    name: &str,
+    namespace: &str,
+    token_request: &TokenRequest,
+) -> kube::Result<TokenRequest> {
+    let url_path = format!(
+        "{}/{}/token",
+        ServiceAccount::url_path(
+            &<ServiceAccount as Resource>::DynamicType::default(),
+            Some(namespace)
+        ),
+        name
+    );
+    let body = serde_json::to_vec(token_request).map_err(kube::Error::SerdeError)?;
+    let mut req = http::Request::post(url_path)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .map_err(|e| kube::Error::BuildRequest(kube::core::request::Error::BuildRequest(e)))?;
+    req.extensions_mut().insert("create_token_request");
+    client.request(req).await
+}
+
 /// Prepare Kubernetes client with specified ServiceAccount info in Rule spec
 async fn prepare_kube_client(
     client: Client,
     serviceaccount_info: ServiceAccountInfo,
+    timeout_seconds: Option<i32>,
 ) -> Result<kube::Client, Error> {
-    // Prepare Kubernetes APIs
-    let serviceaccount_api =
-        Api::<ServiceAccount>::namespaced(client.clone(), &serviceaccount_info.namespace);
-    let secret_api = Api::<Secret>::namespaced(client, &serviceaccount_info.namespace);
-
-    let serviceaccount = serviceaccount_api
-        .get_opt(&serviceaccount_info.name)
-        .await
-        .map_err(Error::Kubernetes)?
-        .ok_or(Error::ServiceAccountNotFound)?;
-    // Extract Secret name from ServiceAccount
-    let secret_name = serviceaccount
-        .secrets
-        .unwrap_or_default()
-        .get(0)
-        .and_then(|or| or.name.clone())
-        .ok_or(Error::ServiceAccountDoesNotHaveSecretReference)?;
-    let secret = secret_api
-        .get_opt(&secret_name)
-        .await
-        .map_err(Error::Kubernetes)?
-        .ok_or(Error::ServiceAccountSecretNotFound)?;
-
-    // Extract Secret data
-    let secret_data = secret.data.unwrap_or_default();
-    macro_rules! get {
-        ($key:expr) => {
-            secret_data
-                .get($key)
-                .ok_or(Error::ServiceAccountSecretDataDoesNotHaveKey($key))?
-        };
-    }
-    let ca_crt = base64::encode(&get!("ca.crt").0);
-    let namespace = String::from_utf8_lossy(&get!("namespace").0);
-    let token = String::from_utf8_lossy(&get!("token").0);
+    // Retrieve token from ServiceAccount
+    let tr = create_token_request(
+        client,
+        &serviceaccount_info.name,
+        &serviceaccount_info.namespace,
+        &TokenRequest {
+            metadata: Default::default(),
+            spec: TokenRequestSpec {
+                audiences: vec!["https://kubernetes.default.svc.cluster.local".to_string()],
+                // expirationSeconds should greater than 10 minutes
+                expiration_seconds: Some(std::cmp::max(
+                    timeout_seconds.unwrap_or(10).into(),
+                    10 * 60,
+                )),
+                ..Default::default()
+            },
+            status: None,
+        },
+    )
+    .await
+    .map_err(|error| {
+        if let kube::Error::Api(ref api_error) = error {
+            if api_error.code == 404 {
+                return Error::ServiceAccountNotFound;
+            }
+        }
+        Error::Kubernetes(error)
+    })?;
+    let token = tr.status.ok_or(Error::RequestServiceAccountToken)?.token;
 
     // Default config from env
     let env_default_config =
@@ -135,14 +160,14 @@ async fn prepare_kube_client(
             context: kube::config::Context {
                 cluster: DEFAULT.to_string(),
                 user: DEFAULT.to_string(),
-                namespace: Some(namespace.to_string()),
+                namespace: Some(serviceaccount_info.namespace),
                 extensions: None,
             },
         }],
         auth_infos: vec![kube::config::NamedAuthInfo {
             name: DEFAULT.to_string(),
             auth_info: kube::config::AuthInfo {
-                token: Some(secrecy::SecretString::new(token.to_string())),
+                token: Some(secrecy::SecretString::new(token)),
                 ..Default::default()
             },
         }],
@@ -152,7 +177,7 @@ async fn prepare_kube_client(
                 server: env_default_config.cluster_url.to_string(),
                 insecure_skip_tls_verify: Some(env_default_config.accept_invalid_certs),
                 certificate_authority: None,
-                certificate_authority_data: Some(ca_crt),
+                certificate_authority_data: None,
                 proxy_url: env_default_config.proxy_url.map(|url| url.to_string()),
                 extensions: None,
             },
@@ -160,9 +185,11 @@ async fn prepare_kube_client(
         ..Default::default()
     };
     // Convert it back to Config
-    let config = kube::Config::from_custom_kubeconfig(kube_config, &Default::default())
+    let mut config = kube::Config::from_custom_kubeconfig(kube_config, &Default::default())
         .await
         .map_err(Error::KubernetesKubeconfig)?;
+    // Set missing fields
+    config.root_cert = env_default_config.root_cert;
 
     let new_client = Client::try_from(config).map_err(Error::Kubernetes)?;
 
@@ -172,11 +199,12 @@ async fn prepare_kube_client(
 async fn prepare_lua_ctx(
     client: Client,
     serviceaccount_info: Option<ServiceAccountInfo>,
+    timeout_seconds: Option<i32>,
 ) -> Result<Lua, Error> {
     // Prepare app data
     // Create Kubernetes client which is restricted with provided ServiceAccount
     let restricted_client = if let Some(serviceaccount_info) = serviceaccount_info {
-        Some(prepare_kube_client(client, serviceaccount_info).await?)
+        Some(prepare_kube_client(client, serviceaccount_info, timeout_seconds).await?)
     } else {
         None
     };

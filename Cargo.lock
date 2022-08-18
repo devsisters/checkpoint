@@ -226,6 +226,7 @@ dependencies = [
  "envy",
  "futures-util",
  "hostname",
+ "http",
  "json-patch",
  "k8s-openapi",
  "kube",
