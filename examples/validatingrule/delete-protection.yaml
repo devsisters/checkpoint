@@ -1,0 +1,40 @@
+# Protect Namespaces, PersistentVolumeClaims, and StatefulSets from accidential deletion.
+---
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: delete-protection
+spec:
+  namespaceSelector:
+    matchExpressions:
+    - key: delete-protection/ignored
+      operator: NotIn
+      values: ["true"]
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["namespaces", "persistentvolumeclaims"]
+    operations: ["DELETE"]
+  - apiGroups: ["apps"]
+    apiVersions: ["*"]
+    resources: ["statefulsets"]
+    operations: ["DELETE"]
+    scope: "Namespaced"
+  code: |
+    -- Config
+    annotationKey = "delete-allow"
+    annotationValue = "true"
+
+    request = ...
+    annotation = (request.oldObject.metadata.annotations or {})[annotationKey]
+    if annotation ~= nil then
+      if annotationValue == "" then
+        return
+      elseif annotation == annotationValue then
+        return
+      else
+        return "resource " .. request.name .. ": key exists but value mismatch: expected `" .. annotationValue .. "`, got `" .. annotation .. "`"
+      end
+    else
+      return "resource " .. request.name .. ": does not contain annotation `" .. annotationKey .. "` with value `" .. annotationValue .. "`"
+    end
