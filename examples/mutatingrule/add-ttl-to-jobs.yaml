@@ -22,7 +22,7 @@ spec:
       return
     end
 
-    new_object = deepcopy(request.object)
-    new_object.spec.ttlSecondsAfterFinished = ttlSecondsAfterFinished
-    diff = jsonpatch_diff(request.object, new_object)
+    newObject = deepcopy(request.object)
+    newObject.spec.ttlSecondsAfterFinished = ttlSecondsAfterFinished
+    diff = jsonpatchDiff(request.object, newObject)
     return nil, diff
