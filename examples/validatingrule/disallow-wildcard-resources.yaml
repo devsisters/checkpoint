@@ -1,0 +1,20 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: disallow-wildcard-resources
+spec:
+  objectRules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    apiVersions: ["*"]
+    resources: ["roles", "clusterroles"]
+    operations: ["CREATE", "UPDATE"]
+  code: |
+    request = ...
+
+    for _, rule in pairs(request.object.rules) do
+      for _, resource in pairs(rule.resources) do
+        if string.find(resource, "*", 1, true) ~= nil then
+          return "Role should not contain wildcard resource"
+        end
+      end
+    end
