@@ -1,0 +1,17 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: ValidatingRule
+metadata:
+  name: disallow-default-namespace
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["*"]
+    operations: ["CREATE"]
+    scope: "Namespaced"
+  code: |
+    request = ...
+
+    if request.namespace == "default" then
+      return "\"default\" namespace is not allowed"
+    end
