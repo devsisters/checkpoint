@@ -5,7 +5,6 @@ FROM chef AS planner
 
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
-COPY src src
 
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -22,6 +21,6 @@ RUN cargo build --release
 
 FROM docker.io/debian:stable-slim AS runtime
 
-COPY --from=builder /app/target/release/checkpoint /usr/local/bin/
+COPY --from=builder /app/target/release/checkpoint /app/target/release/checkpoint-controller /usr/local/bin/
 
-CMD ["/usr/local/bin/checkpoint"]
+CMD ["/usr/local/bin/checkpoint-controller"]

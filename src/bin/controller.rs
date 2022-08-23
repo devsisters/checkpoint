@@ -1,9 +1,3 @@
-mod config;
-mod handler;
-mod leader_election;
-mod reconcile;
-mod types;
-
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -50,12 +44,12 @@ async fn main() -> Result<()> {
     let client: kube::Client = kube_config.try_into()?;
 
     // Prepare HTTP app
-    let http_app = crate::handler::create_app(client.clone());
+    let http_app = checkpoint::handler::create_app(client.clone());
 
     // Prepare TLS config for HTTPS serving
     let tls_config = RustlsConfig::from_pem_file(
-        &crate::config::CONFIG.cert_path,
-        &crate::config::CONFIG.key_path,
+        &checkpoint::config::CONFIG.cert_path,
+        &checkpoint::config::CONFIG.key_path,
     )
     .await?;
 
@@ -73,7 +67,7 @@ async fn main() -> Result<()> {
 
     // Spawn HTTP server
     let http_handle = tokio::spawn(
-        axum_server::bind_rustls(crate::config::CONFIG.listen_addr.parse()?, tls_config)
+        axum_server::bind_rustls(checkpoint::config::CONFIG.listen_addr.parse()?, tls_config)
             .handle(axum_server_handle)
             .serve(http_app.into_make_service()),
     );
@@ -82,7 +76,7 @@ async fn main() -> Result<()> {
     // Acquire lease
     let hostname = hostname::get()?;
     let hostname = hostname.to_string_lossy();
-    let lease_fut = crate::leader_election::Lease::acquire_or_create(
+    let lease_fut = checkpoint::leader_election::Lease::acquire_or_create(
         client.clone(),
         &default_namespace,
         "checkpoint.devsisters.com",
@@ -99,9 +93,9 @@ async fn main() -> Result<()> {
     };
 
     // Prepare Kubernetes APIs
-    let vr_api = Api::<crate::types::ValidatingRule>::all(client.clone());
+    let vr_api = Api::<checkpoint::types::ValidatingRule>::all(client.clone());
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
-    let mr_api = Api::<crate::types::MutatingRule>::all(client.clone());
+    let mr_api = Api::<checkpoint::types::MutatingRule>::all(client.clone());
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
     // Spawn ValidatingRule controller
@@ -112,9 +106,9 @@ async fn main() -> Result<()> {
                 let _ = shutdown_signal_broadcast_rx1.recv().await;
             })
             .run(
-                crate::reconcile::reconcile_validatingrule,
-                crate::reconcile::error_policy,
-                Arc::new(crate::reconcile::Data {
+                checkpoint::reconcile::reconcile_validatingrule,
+                checkpoint::reconcile::error_policy,
+                Arc::new(checkpoint::reconcile::Data {
                     client: client.clone(),
                 }),
             )
@@ -134,9 +128,9 @@ async fn main() -> Result<()> {
                 let _ = shutdown_signal_broadcast_rx2.recv().await;
             })
             .run(
-                crate::reconcile::reconcile_mutatingrule,
-                crate::reconcile::error_policy,
-                Arc::new(crate::reconcile::Data { client }),
+                checkpoint::reconcile::reconcile_mutatingrule,
+                checkpoint::reconcile::error_policy,
+                Arc::new(checkpoint::reconcile::Data { client }),
             )
             .for_each(|res| async move {
                 match res {
