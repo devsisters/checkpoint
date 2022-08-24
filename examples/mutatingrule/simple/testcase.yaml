@@ -1,0 +1,7 @@
+mutatingRules:
+- rule.yaml
+cases:
+- request: request.yaml
+  expected:
+    allowed: true
+    finalObject: result.yaml
