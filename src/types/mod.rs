@@ -1,4 +1,5 @@
 pub mod rule;
+pub mod testcase;
 
 use std::borrow::Cow;
 
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// Some resource (e.g. PodExecOptions) does not have `metadata`. But `kube` crate expects all resources have `metadata`.
 /// So we create a custom `DynamicObject` that can use default `ObjectMeta` when deserializing.
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct DynamicObjectWithOptionalMetadata {
     /// The type fields, not always present
     #[serde(flatten, default)]
