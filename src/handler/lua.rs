@@ -13,9 +13,10 @@ use mlua::{Lua, LuaSerdeExt, Value};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-use crate::types::rule::ServiceAccountInfo;
-
-use super::{DynamicObjectWithOptionalMetadata, Error};
+use crate::{
+    handler::Error,
+    types::{rule::ServiceAccountInfo, DynamicObjectWithOptionalMetadata},
+};
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
