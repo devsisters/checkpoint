@@ -93,9 +93,9 @@ async fn main() -> Result<()> {
     };
 
     // Prepare Kubernetes APIs
-    let vr_api = Api::<checkpoint::types::ValidatingRule>::all(client.clone());
+    let vr_api = Api::<checkpoint::types::rule::ValidatingRule>::all(client.clone());
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
-    let mr_api = Api::<checkpoint::types::MutatingRule>::all(client.clone());
+    let mr_api = Api::<checkpoint::types::rule::MutatingRule>::all(client.clone());
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
     // Spawn ValidatingRule controller

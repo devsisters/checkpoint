@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::{
     config::CONFIG,
-    types::{MutatingRule, ValidatingRule},
+    types::rule::{MutatingRule, ValidatingRule},
 };
 
 pub struct Data {

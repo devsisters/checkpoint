@@ -13,7 +13,7 @@ use mlua::{Lua, LuaSerdeExt, Value};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-use crate::types::ServiceAccountInfo;
+use crate::types::rule::ServiceAccountInfo;
 
 use super::{DynamicObjectWithOptionalMetadata, Error};
 

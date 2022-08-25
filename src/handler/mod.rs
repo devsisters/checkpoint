@@ -15,7 +15,7 @@ use kube::{
 use mlua::LuaSerdeExt;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{MutatingRule, ValidatingRule};
+use crate::types::rule::{MutatingRule, ValidatingRule};
 
 /// Prepare HTTP router
 pub fn create_app(kube_client: kube::Client) -> Router {
