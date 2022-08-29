@@ -1,8 +1,56 @@
 controller:
   replicaCount: 1
+  podAnnotations: {}
+  podSecurityContext: {}
+    # fsGroup: 2000
+  securityContext: {}
+    # capabilities:
+    #   drop:
+    #   - ALL
+    # readOnlyRootFilesystem: true
+    # runAsNonRoot: true
+    # runAsUser: 1000
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  serviceAccount:
+    # Annotations to add to the service account
+    annotations: {}
 
 webhook:
   replicaCount: 2
+  podAnnotations: {}
+  podSecurityContext: {}
+    # fsGroup: 2000
+  securityContext: {}
+    # capabilities:
+    #   drop:
+    #   - ALL
+    # readOnlyRootFilesystem: true
+    # runAsNonRoot: true
+    # runAsUser: 1000
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  serviceAccount:
+    # Annotations to add to the service account
+    annotations: {}
+  service:
+    port: 443
 
 image:
   repository: checkpoint
@@ -13,37 +61,3 @@ image:
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
-
-serviceAccount:
-  # Annotations to add to the service account
-  annotations: {}
-
-podAnnotations: {}
-
-podSecurityContext: {}
-  # fsGroup: 2000
-
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
-
-service:
-  port: 443
-
-resources: {}
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
-
-nodeSelector: {}
-
-tolerations: []
-
-affinity: {}
