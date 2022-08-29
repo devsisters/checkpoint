@@ -1,0 +1,12 @@
+validatingRules:
+- rule.yaml
+cases:
+- name: bad
+  request: bad-request.yaml
+  expected:
+    allowed: false
+    message: That name is not cute.
+- name: good
+  request: good-request.yaml
+  expected:
+    allowed: true

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: foobar-uwu
+  uid: 00000000-0000-0000-0000-000000000000
+  creationTimestamp: 2022-08-24T00:00:00Z
+  managedFields:
+  - fieldsV1:
+       f:status:
+         f:phase: {}
+    time: '2022-08-24T00:00:00Z'
+    apiVersion: v1
+    manager: kubectl-create
+    operation: Update
+    fieldsType: FieldsV1
+status:
+  phase: Active

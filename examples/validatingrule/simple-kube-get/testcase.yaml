@@ -1,0 +1,28 @@
+validatingRules:
+- rule.yaml
+cases:
+- name: bad
+  stubs:
+    kubeGet:
+    - parameter:
+        group: ""
+        version: v1
+        kind: Namespace
+        name: block
+      output: block-namespace.yaml
+  request: request.yaml
+  expected:
+    allowed: false
+    message: Namespace creation blocked
+- name: good
+  stubs:
+    kubeGet:
+    - parameter:
+        group: ""
+        version: v1
+        kind: Namespace
+        name: block
+      output: null
+  request: request.yaml
+  expected:
+    allowed: true

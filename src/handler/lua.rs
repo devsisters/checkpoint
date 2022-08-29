@@ -13,9 +13,10 @@ use mlua::{Lua, LuaSerdeExt, Value};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-use crate::types::ServiceAccountInfo;
-
-use super::{DynamicObjectWithOptionalMetadata, Error};
+use crate::{
+    handler::Error,
+    types::{rule::ServiceAccountInfo, DynamicObjectWithOptionalMetadata},
+};
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
@@ -23,9 +24,7 @@ struct LuaContextAppData {
 
 /// Evaluate Lua code and return its output
 pub(super) async fn eval_lua_code<T>(
-    client: Client,
-    serviceaccount_info: Option<ServiceAccountInfo>,
-    timeout_seconds: Option<i32>,
+    lua: Lua,
     code: String,
     admission_req: AdmissionRequest<DynamicObjectWithOptionalMetadata>,
 ) -> Result<T, Error>
@@ -46,8 +45,6 @@ where
             .and_then(|runtime| {
                 // Block on current thread
                 runtime.block_on(async move {
-                    let lua = prepare_lua_ctx(client, serviceaccount_info, timeout_seconds).await?;
-
                     // Serialize AdmissionRequest to Lua value
                     let admission_req_lua_value = lua
                         .to_value_with(
@@ -109,7 +106,7 @@ async fn create_token_request(
 /// Prepare Kubernetes client with specified ServiceAccount info in Rule spec
 async fn prepare_kube_client(
     client: Client,
-    serviceaccount_info: ServiceAccountInfo,
+    serviceaccount_info: &ServiceAccountInfo,
     timeout_seconds: Option<i32>,
 ) -> Result<kube::Client, Error> {
     // Retrieve token from ServiceAccount
@@ -160,7 +157,7 @@ async fn prepare_kube_client(
             context: kube::config::Context {
                 cluster: DEFAULT.to_string(),
                 user: DEFAULT.to_string(),
-                namespace: Some(serviceaccount_info.namespace),
+                namespace: Some(serviceaccount_info.namespace.clone()),
                 extensions: None,
             },
         }],
@@ -196,9 +193,9 @@ async fn prepare_kube_client(
     Ok(new_client)
 }
 
-async fn prepare_lua_ctx(
+pub(super) async fn prepare_lua_ctx(
     client: Client,
-    serviceaccount_info: Option<ServiceAccountInfo>,
+    serviceaccount_info: &Option<ServiceAccountInfo>,
     timeout_seconds: Option<i32>,
 ) -> Result<Lua, Error> {
     // Prepare app data
@@ -218,34 +215,33 @@ async fn prepare_lua_ctx(
     // Enable sandbox mode
     lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
 
-    {
-        let globals = lua.globals();
-
-        // Macro to register Lua helper functions
-        macro_rules! register_lua_function {
-            ($name:literal, $func:ident) => {
-                let f = lua
-                    .create_function($func)
-                    .map_err(Error::CreateLuaFunction)?;
-                globals.set($name, f).map_err(Error::SetLuaValue)?;
-            };
-            ($name:literal, $func:ident, async) => {
-                let f = lua
-                    .create_async_function($func)
-                    .map_err(Error::CreateLuaFunction)?;
-                globals.set($name, f).map_err(Error::SetLuaValue)?;
-            };
-        }
-
-        // Register all Lua helper functions
-        register_lua_function!("debugPrint", lua_debug_print);
-        register_lua_function!("deepcopy", lua_deepcopy);
-        register_lua_function!("jsonpatchDiff", lua_jsonpatch_diff);
-        register_lua_function!("kubeGet", lua_kube_get, async);
-        register_lua_function!("kubeList", lua_kube_list, async);
-    }
+    register_lua_helper_functions(&lua).map_err(Error::RegisterHelperFunction)?;
 
     Ok(lua)
+}
+
+pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
+    let globals = lua.globals();
+
+    macro_rules! register_lua_function {
+        ($name:literal, $func:ident) => {
+            let f = lua.create_function($func)?;
+            globals.set($name, f)?;
+        };
+        ($name:literal, $func:ident, async) => {
+            let f = lua.create_async_function($func)?;
+            globals.set($name, f)?;
+        };
+    }
+
+    // Register all Lua helper functions
+    register_lua_function!("debugPrint", lua_debug_print);
+    register_lua_function!("deepcopy", lua_deepcopy);
+    register_lua_function!("jsonpatchDiff", lua_jsonpatch_diff);
+    register_lua_function!("kubeGet", lua_kube_get, async);
+    register_lua_function!("kubeList", lua_kube_list, async);
+
+    Ok(())
 }
 
 /// Lua helper function to debug-print Lua value with JSON format
@@ -296,14 +292,14 @@ fn extract_kube_client_from_lua_ctx(lua: &Lua) -> mlua::Result<Client> {
         .ok_or_else(|| mlua::Error::external(Error::ServiceAccountInfoNotProvided))
 }
 
-#[derive(Deserialize, Debug, Clone)]
-struct KubeGetArgument {
-    group: String,
-    version: String,
-    kind: String,
-    plural: Option<String>,
-    namespace: Option<String>,
-    name: String,
+#[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+pub struct KubeGetArgument {
+    pub group: String,
+    pub version: String,
+    pub kind: String,
+    pub plural: Option<String>,
+    pub namespace: Option<String>,
+    pub name: String,
 }
 
 /// Lua helper function to get a Kubernetes resource
@@ -347,29 +343,29 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
     )
 }
 
-#[derive(Deserialize, Debug, Clone)]
-struct KubeListArgument {
-    group: String,
-    version: String,
-    kind: String,
-    plural: Option<String>,
-    namespace: Option<String>,
-    list_params: Option<KubeListArgumentListParams>,
+#[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+pub struct KubeListArgument {
+    pub group: String,
+    pub version: String,
+    pub kind: String,
+    pub plural: Option<String>,
+    pub namespace: Option<String>,
+    pub list_params: Option<KubeListArgumentListParams>,
 }
 
 fn default_kube_list_argument_list_params_bookmarks() -> bool {
     true
 }
 
-#[derive(Deserialize, Debug, Clone)]
-struct KubeListArgumentListParams {
-    label_selector: Option<String>,
-    field_selector: Option<String>,
-    timeout: Option<u32>,
+#[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+pub struct KubeListArgumentListParams {
+    pub label_selector: Option<String>,
+    pub field_selector: Option<String>,
+    pub timeout: Option<u32>,
     #[serde(default = "default_kube_list_argument_list_params_bookmarks")]
-    bookmarks: bool,
-    limit: Option<u32>,
-    continue_token: Option<String>,
+    pub bookmarks: bool,
+    pub limit: Option<u32>,
+    pub continue_token: Option<String>,
 }
 
 /// Lua helper function to list Kubernetes resources

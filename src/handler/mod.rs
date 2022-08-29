@@ -1,21 +1,20 @@
-mod lua;
-
-use std::borrow::Cow;
+pub mod lua;
 
 use axum::{extract, http::StatusCode, response, routing, Router};
 use json_patch::{Patch, PatchOperation};
 use kube::{
     core::{
         admission::{AdmissionRequest, AdmissionResponse, AdmissionReview, SerializePatchError},
-        DynamicObject, ObjectMeta, TypeMeta,
+        DynamicObject,
     },
-    discovery::ApiResource,
-    Api, Resource,
+    Api,
 };
-use mlua::LuaSerdeExt;
-use serde::{Deserialize, Serialize};
+use mlua::{Lua, LuaSerdeExt};
 
-use crate::types::{MutatingRule, ValidatingRule};
+use crate::types::{
+    rule::{MutatingRule, RuleSpec, ValidatingRule},
+    DynamicObjectWithOptionalMetadata,
+};
 
 /// Prepare HTTP router
 pub fn create_app(kube_client: kube::Client) -> Router {
@@ -29,7 +28,7 @@ pub fn create_app(kube_client: kube::Client) -> Router {
 
 /// Errors can be raised within HTTP handler
 #[derive(thiserror::Error, Debug)]
-enum Error {
+pub enum Error {
     #[error("Rule is not found")]
     RuleNotFound,
     #[error("Lua app data not found. This is a bug.")]
@@ -48,10 +47,8 @@ enum Error {
     KubernetesKubeconfig(#[source] kube::config::KubeconfigError),
     #[error("failed to set Lua sandbox mode: {0}")]
     SetLuaSandbox(#[source] mlua::Error),
-    #[error("failed to create Lua function: {0}")]
-    CreateLuaFunction(#[source] mlua::Error),
-    #[error("failed to set Lua value: {0}")]
-    SetLuaValue(#[source] mlua::Error),
+    #[error("failed to register Lua helper functions: {0}")]
+    RegisterHelperFunction(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to create Tokio runtime: {0}")]
@@ -73,54 +70,6 @@ impl response::IntoResponse for Error {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status_code, self.to_string()).into_response()
-    }
-}
-
-/// Some resource (e.g. PodExecOptions) does not have `metadata`. But `kube` crate expects all resources have `metadata`.
-/// So we create a custom `DynamicObject` that can use default `ObjectMeta` when deserializing.
-#[derive(Deserialize, Serialize, Clone, Debug)]
-struct DynamicObjectWithOptionalMetadata {
-    /// The type fields, not always present
-    #[serde(flatten, default)]
-    pub types: Option<TypeMeta>,
-    /// Object metadata
-    #[serde(default)]
-    pub metadata: ObjectMeta,
-
-    /// All other keys
-    #[serde(flatten)]
-    pub data: serde_json::Value,
-}
-
-impl Resource for DynamicObjectWithOptionalMetadata {
-    type DynamicType = ApiResource;
-
-    fn group(dt: &ApiResource) -> Cow<'_, str> {
-        dt.group.as_str().into()
-    }
-
-    fn version(dt: &ApiResource) -> Cow<'_, str> {
-        dt.version.as_str().into()
-    }
-
-    fn kind(dt: &ApiResource) -> Cow<'_, str> {
-        dt.kind.as_str().into()
-    }
-
-    fn api_version(dt: &ApiResource) -> Cow<'_, str> {
-        dt.api_version.as_str().into()
-    }
-
-    fn plural(dt: &ApiResource) -> Cow<'_, str> {
-        dt.plural.as_str().into()
-    }
-
-    fn meta(&self) -> &ObjectMeta {
-        &self.metadata
-    }
-
-    fn meta_mut(&mut self) -> &mut ObjectMeta {
-        &mut self.metadata
     }
 }
 
@@ -146,7 +95,24 @@ async fn validate_handler(
         }
     };
 
-    let resp = validate(kube_client, &rule_name, &req).await;
+    // Prepare Kubernetes API
+    let vr_api = Api::<ValidatingRule>::all(kube_client.clone());
+
+    // Get matching ValidatingRule
+    let vr = vr_api
+        .get_opt(&rule_name)
+        .await
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::RuleNotFound)?;
+
+    let lua = lua::prepare_lua_ctx(
+        kube_client,
+        &vr.spec.0.service_account,
+        vr.spec.0.timeout_seconds,
+    )
+    .await?;
+
+    let resp = validate(&vr.spec.0, &req, lua).await;
 
     // Log if error happens
     if let Err(error) = &resp {
@@ -157,30 +123,14 @@ async fn validate_handler(
 }
 
 /// Actual validating function
-async fn validate(
-    client: kube::Client,
-    rule_name: &str,
+pub async fn validate(
+    rule_spec: &RuleSpec,
     req: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    lua: Lua,
 ) -> Result<AdmissionResponse, Error> {
-    // Prepare Kubernetes API
-    let vr_api = Api::<ValidatingRule>::all(client.clone());
-
-    // Get matching ValidatingRule
-    let vr = vr_api
-        .get_opt(rule_name)
-        .await
-        .map_err(Error::Kubernetes)?
-        .ok_or(Error::RuleNotFound)?;
-
     // Evaluate Lua code and get `deny_reason`
-    let deny_reason: Option<String> = lua::eval_lua_code(
-        client,
-        vr.spec.0.service_account,
-        vr.spec.0.timeout_seconds,
-        vr.spec.0.code,
-        req.clone(),
-    )
-    .await?;
+    let deny_reason: Option<String> =
+        lua::eval_lua_code(lua, rule_spec.code.clone(), req.clone()).await?;
 
     // Prepare AdmissionResponse from AddmissionRequest
     let resp: AdmissionResponse = req.into();
@@ -212,7 +162,24 @@ async fn mutate_handler(
         }
     };
 
-    let resp = mutate(kube_client, &rule_name, &req).await;
+    // Prepare Kubernetes API
+    let mr_api = Api::<MutatingRule>::all(kube_client.clone());
+
+    // Get matching MutatingRule
+    let mr = mr_api
+        .get_opt(&rule_name)
+        .await
+        .map_err(Error::Kubernetes)?
+        .ok_or(Error::RuleNotFound)?;
+
+    let lua = lua::prepare_lua_ctx(
+        kube_client,
+        &mr.spec.0.service_account,
+        mr.spec.0.timeout_seconds,
+    )
+    .await?;
+
+    let resp = mutate(&mr.spec.0, &req, lua).await;
 
     // Log if error happens
     if let Err(error) = &resp {
@@ -233,30 +200,14 @@ impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
 }
 
 /// Actual mutating function
-async fn mutate(
-    client: kube::Client,
-    rule_name: &str,
+pub async fn mutate(
+    rule_spec: &RuleSpec,
     req: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    lua: Lua,
 ) -> Result<AdmissionResponse, Error> {
-    // Prepare Kubernetes API
-    let mr_api = Api::<MutatingRule>::all(client.clone());
-
-    // Get matching MutatingRule
-    let mr = mr_api
-        .get_opt(rule_name)
-        .await
-        .map_err(Error::Kubernetes)?
-        .ok_or(Error::RuleNotFound)?;
-
     // Evaluate Lua code and get `deny_reason` and `patch`
-    let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) = lua::eval_lua_code(
-        client,
-        mr.spec.0.service_account,
-        mr.spec.0.timeout_seconds,
-        mr.spec.0.code,
-        req.clone(),
-    )
-    .await?;
+    let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) =
+        lua::eval_lua_code(lua, rule_spec.code.clone(), req.clone()).await?;
 
     // Prepare AdmissionResponse from AdmissionRequest
     let resp: AdmissionResponse = req.into();
