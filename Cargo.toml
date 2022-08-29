@@ -37,5 +37,9 @@ name = "checkpoint-controller"
 path = "src/bin/controller.rs"
 
 [[bin]]
+name = "checkpoint-webhook"
+path = "src/bin/webhook.rs"
+
+[[bin]]
 name = "checkpoint"
 path = "src/bin/cli.rs"

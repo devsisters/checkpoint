@@ -10,4 +10,4 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: 3000
   selector:
-    {{- include "checkpoint.selectorLabels" . | nindent 4 }}
+    {{- include "checkpoint.selectorLabels.webhook" . | nindent 4 }}

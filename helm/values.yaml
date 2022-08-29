@@ -1,4 +1,8 @@
-replicaCount: 2
+controller:
+  replicaCount: 1
+
+webhook:
+  replicaCount: 2
 
 image:
   repository: checkpoint
