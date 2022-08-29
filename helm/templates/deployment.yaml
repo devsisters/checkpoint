@@ -11,14 +11,14 @@ spec:
       {{- include "checkpoint.selectorLabels.controller" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.controller.podAnnotations }}
+      {{- with .Values.controller.podAnnotations | default .Values.defaults.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
         {{- include "checkpoint.selectorLabels.controller" . | nindent 8 }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with .Values.imagePullSecrets | default .Values.defaults.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -29,8 +29,8 @@ spec:
       - name: {{ .Chart.Name }}
         securityContext:
           {{- toYaml .Values.controller.securityContext | nindent 10 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        image: "{{ .Values.controller.image.repository | default .Values.defaults.image.repository }}:{{ .Values.controller.image.tag | default .Values.defaults.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.controller.image.pullPolicy | defaults .Values.defaults.image.pullPolicy }}
         command: ["/usr/local/bin/checkpoint-controller"]
         resources:
           {{- toYaml .Values.controller.resources | nindent 10 }}
@@ -74,14 +74,14 @@ spec:
       {{- include "checkpoint.selectorLabels.webhook" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.webhook.podAnnotations }}
+      {{- with .Values.webhook.podAnnotations | default .Values.defaults.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
         {{- include "checkpoint.selectorLabels.webhook" . | nindent 8 }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with .Values.webhook.imagePullSecrets | default .Values.defaults.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -92,8 +92,8 @@ spec:
       - name: {{ .Chart.Name }}
         securityContext:
           {{- toYaml .Values.webhook.securityContext | nindent 10 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        image: "{{ .Values.webhook.image.repository | default .Values.defaults.image.repository }}:{{ .Values.webhook.image.tag | default .Values.defaults.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.webhook.image.pullPolicy | default .Values.webhook.image.pullPolicy }}
         command: ["/usr/local/bin/checkpoint-webhook"]
         ports:
         - containerPort: 3000

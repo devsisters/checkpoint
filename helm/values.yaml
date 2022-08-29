@@ -23,6 +23,12 @@ controller:
   serviceAccount:
     # Annotations to add to the service account
     annotations: {}
+  image:
+    repository: ""
+    pullPolicy: ""
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+  imagePullSecrets: []
 
 webhook:
   replicaCount: 2
@@ -49,15 +55,26 @@ webhook:
   serviceAccount:
     # Annotations to add to the service account
     annotations: {}
+  image:
+    repository: ""
+    pullPolicy: ""
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+  imagePullSecrets: []
   service:
     port: 443
 
-image:
-  repository: checkpoint
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
-
-imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
+
+# Fallback values
+# These values will be used unless specified in component
+defaults:
+  podAnnotations: {}
+
+  image:
+    repository: checkpoint
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+  imagePullSecrets: []
