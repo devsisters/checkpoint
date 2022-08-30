@@ -41,10 +41,6 @@ spec:
           value: {{ .Release.Namespace }}
         - name: CONF_SERVICE_NAME
           value: checkpoint-controller-service
-{{- /*
-        - name: CONF_SERVICE_PORT
-          value: "{{ .Values.controller.service.port }}"
-*/}}
         - name: CONF_CA_BUNDLE
           valueFrom:
             secretKeyRef:
