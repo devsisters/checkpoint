@@ -12,6 +12,8 @@ pub struct ControllerConfig {
     pub service_namespace: String,
     /// Installed Kubernetes Service name of the controller
     pub service_name: String,
+    /// Installed Kubernetes Service port of the controller
+    pub service_port: i32,
 
     /// Base64 encoded PEM CA bundle for controller
     pub ca_bundle: String,
