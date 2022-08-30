@@ -69,12 +69,33 @@ fullnameOverride: ""
 
 # Fallback values
 # These values will be used unless specified in component
-defaults:
-  podAnnotations: {}
-
-  image:
-    repository: checkpoint
-    pullPolicy: IfNotPresent
-    # Overrides the image tag whose default is the chart appVersion.
-    tag: ""
-  imagePullSecrets: []
+replicaCount: 2
+podAnnotations: {}
+podSecurityContext: {}
+  # fsGroup: 2000
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+resources: {}
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+nodeSelector: {}
+tolerations: []
+affinity: {}
+serviceAccount:
+  # Annotations to add to the service account
+  annotations: {}
+image:
+  repository: ""
+  pullPolicy: ""
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+imagePullSecrets: []
