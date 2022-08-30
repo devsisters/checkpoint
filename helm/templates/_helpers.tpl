@@ -35,7 +35,7 @@ Common labels
 */}}
 {{- define "checkpoint.labels" -}}
 helm.sh/chart: {{ include "checkpoint.chart" . }}
-{{ include "checkpoint.selectorLabels" . }}
+{{ include "checkpoint.selectorLabels.common" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,7 +45,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "checkpoint.selectorLabels" -}}
+{{- define "checkpoint.selectorLabels.common" -}}
 app.kubernetes.io/name: {{ include "checkpoint.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{- define "checkpoint.selectorLabels.controller" -}}
+{{ include "checkpoint.selectorLabels.common" . }}
+app.kubernetes.io/component: controller
+{{- end }}
+
+{{- define "checkpoint.selectorLabels.webhook" -}}
+{{ include "checkpoint.selectorLabels.common" . }}
+app.kubernetes.io/component: webhook
 {{- end }}

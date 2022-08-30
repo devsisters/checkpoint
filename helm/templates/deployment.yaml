@@ -5,52 +5,107 @@ metadata:
   labels:
     {{- include "checkpoint.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.controller.replicaCount }}
   selector:
     matchLabels:
-      {{- include "checkpoint.selectorLabels" . | nindent 6 }}
+      {{- include "checkpoint.selectorLabels.controller" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- with .Values.controller.podAnnotations | default .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "checkpoint.selectorLabels" . | nindent 8 }}
+        {{- include "checkpoint.selectorLabels.controller" . | nindent 8 }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with .Values.imagePullSecrets | default .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "checkpoint.fullname" . }}
+      serviceAccountName: "{{ include "checkpoint.fullname" . }}-controller"
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml (.Values.controller.podSecurityContext | default .Values.podSecurityContext) | nindent 8 }}
       containers:
       - name: {{ .Chart.Name }}
         securityContext:
-          {{- toYaml .Values.securityContext | nindent 10 }}
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        ports:
-        - containerPort: 3000
+          {{- toYaml (.Values.controller.securityContext | default .Values.securityContext) | nindent 10 }}
+        image: "{{ .Values.controller.image.repository | default .Values.image.repository }}:{{ .Values.controller.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.controller.image.pullPolicy | default .Values.image.pullPolicy }}
+        command: ["/usr/local/bin/checkpoint-controller"]
         resources:
-          {{- toYaml .Values.resources | nindent 10 }}
+          {{- toYaml (.Values.controller.resources | default .Values.resources) | nindent 10 }}
         env:
+        - name: RUST_LOG
+          value: info
         - name: CONF_SERVICE_NAMESPACE
           value: {{ .Release.Namespace }}
         - name: CONF_SERVICE_NAME
           value: checkpoint-controller-service
         - name: CONF_SERVICE_PORT
-          value: "{{ .Values.service.port }}"
-        - name: CONF_CERT_PATH
-          value: /tmp/cert/cert.pem
-        - name: CONF_KEY_PATH
-          value: /tmp/cert/key.pem
+          value: "{{ .Values.controller.service.port }}"
         - name: CONF_CA_BUNDLE
           valueFrom:
             secretKeyRef:
               name: {{ include "checkpoint.fullname" . }}-cert
               key: cert.pem
+      {{- with .Values.controller.nodeSelector | default .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.affinity | default .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations | default .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkpoint-webhook
+  labels:
+    {{- include "checkpoint.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.webhook.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "checkpoint.selectorLabels.webhook" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.webhook.podAnnotations | default .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "checkpoint.selectorLabels.webhook" . | nindent 8 }}
+    spec:
+      {{- with .Values.webhook.imagePullSecrets | default .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: "{{ include "checkpoint.fullname" . }}-webhook"
+      securityContext:
+        {{- toYaml (.Values.webhook.podSecurityContext | default .Values.podSecurityContext) | nindent 8 }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml (.Values.webhook.securityContext | default .Values.securityContext) | nindent 10 }}
+        image: "{{ .Values.webhook.image.repository | default .Values.image.repository }}:{{ .Values.webhook.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.webhook.image.pullPolicy | default .Values.image.pullPolicy }}
+        command: ["/usr/local/bin/checkpoint-webhook"]
+        ports:
+        - containerPort: 3000
+        resources:
+          {{- toYaml (.Values.webhook.resources | default .Values.resources) | nindent 10 }}
+        env:
+        - name: RUST_LOG
+          value: info
+        - name: CONF_CERT_PATH
+          value: /tmp/cert/cert.pem
+        - name: CONF_KEY_PATH
+          value: /tmp/cert/key.pem
         volumeMounts:
         - name: certs
           mountPath: /tmp/cert
@@ -59,15 +114,15 @@ spec:
       - name: certs
         secret:
           secretName: {{ include "checkpoint.fullname" . }}-cert
-      {{- with .Values.nodeSelector }}
+      {{- with .Values.webhook.nodeSelector | default .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with .Values.webhook.affinity | default .Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with .Values.webhook.tolerations | default .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -1,24 +1,79 @@
-replicaCount: 2
+controller:
+  replicaCount: 1
+  podAnnotations: {}
+  podSecurityContext: {}
+    # fsGroup: 2000
+  securityContext: {}
+    # capabilities:
+    #   drop:
+    #   - ALL
+    # readOnlyRootFilesystem: true
+    # runAsNonRoot: true
+    # runAsUser: 1000
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  serviceAccount:
+    # Annotations to add to the service account
+    annotations: {}
+  image:
+    repository: ""
+    pullPolicy: ""
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+  imagePullSecrets: []
+  service:
+    port: 443
 
-image:
-  repository: checkpoint
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+webhook:
+  replicaCount: 2
+  podAnnotations: {}
+  podSecurityContext: {}
+    # fsGroup: 2000
+  securityContext: {}
+    # capabilities:
+    #   drop:
+    #   - ALL
+    # readOnlyRootFilesystem: true
+    # runAsNonRoot: true
+    # runAsUser: 1000
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    # requests:
+    #   cpu: 100m
+    #   memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  serviceAccount:
+    # Annotations to add to the service account
+    annotations: {}
+  image:
+    repository: ""
+    pullPolicy: ""
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+  imagePullSecrets: []
+  service:
+    port: 443
 
-imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-serviceAccount:
-  # Annotations to add to the service account
-  annotations: {}
-
+# Fallback values
+# These values will be used unless specified in component
 podAnnotations: {}
-
 podSecurityContext: {}
   # fsGroup: 2000
-
 securityContext: {}
   # capabilities:
   #   drop:
@@ -26,10 +81,6 @@ securityContext: {}
   # readOnlyRootFilesystem: true
   # runAsNonRoot: true
   # runAsUser: 1000
-
-service:
-  port: 443
-
 resources: {}
   # limits:
   #   cpu: 100m
@@ -37,9 +88,15 @@ resources: {}
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
-
 nodeSelector: {}
-
 tolerations: []
-
 affinity: {}
+serviceAccount:
+  # Annotations to add to the service account
+  annotations: {}
+image:
+  repository: ""
+  pullPolicy: ""
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+imagePullSecrets: []

@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum_server::tls_rustls::RustlsConfig;
 use futures_util::stream::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::{
     MutatingWebhookConfiguration, ValidatingWebhookConfiguration,
 };
 use kube::{api::Api, runtime::Controller};
+use tokio::sync::broadcast::Sender;
+
+use checkpoint::config::ControllerConfig;
 
 /// Generate future that awaits shutdown signal
-async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
+async fn shutdown_signal(shutdown_signal_broadcast_tx: Sender<()>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -32,45 +34,27 @@ async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
         _ = terminate => {},
     }
 
-    axum_server_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+    let _ = shutdown_signal_broadcast_tx.send(());
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
+    let config: ControllerConfig = envy::prefixed("CONF_").from_env()?;
     let kube_config = kube::Config::infer().await?;
     let default_namespace = kube_config.default_namespace.clone();
     let client: kube::Client = kube_config.try_into()?;
 
-    // Prepare HTTP app
-    let http_app = checkpoint::handler::create_app(client.clone());
-
-    // Prepare TLS config for HTTPS serving
-    let tls_config = RustlsConfig::from_pem_file(
-        &checkpoint::config::CONFIG.cert_path,
-        &checkpoint::config::CONFIG.key_path,
-    )
-    .await?;
-
     // Prepare shutdown signal futures
-    let axum_server_handle = axum_server::Handle::new();
-    let shutdown_signal_fut = shutdown_signal(axum_server_handle.clone());
     let (shutdown_signal_broadcast_tx, mut shutdown_signal_broadcast_rx1) =
         tokio::sync::broadcast::channel::<()>(1);
     let mut shutdown_signal_broadcast_rx2 = shutdown_signal_broadcast_tx.subscribe();
     let mut shutdown_signal_broadcast_rx3 = shutdown_signal_broadcast_tx.subscribe();
+    let shutdown_signal_fut = shutdown_signal(shutdown_signal_broadcast_tx);
     tokio::spawn(async move {
         shutdown_signal_fut.await;
-        let _ = shutdown_signal_broadcast_tx.send(());
     });
-
-    // Spawn HTTP server
-    let http_handle = tokio::spawn(
-        axum_server::bind_rustls(checkpoint::config::CONFIG.listen_addr.parse()?, tls_config)
-            .handle(axum_server_handle)
-            .serve(http_app.into_make_service()),
-    );
 
     // Leader election
     // Acquire lease
@@ -110,6 +94,7 @@ async fn main() -> Result<()> {
                 checkpoint::reconcile::error_policy,
                 Arc::new(checkpoint::reconcile::Data {
                     client: client.clone(),
+                    config: config.clone(),
                 }),
             )
             .for_each(|res| async move {
@@ -130,7 +115,7 @@ async fn main() -> Result<()> {
             .run(
                 checkpoint::reconcile::reconcile_mutatingrule,
                 checkpoint::reconcile::error_policy,
-                Arc::new(checkpoint::reconcile::Data { client }),
+                Arc::new(checkpoint::reconcile::Data { client, config }),
             )
             .for_each(|res| async move {
                 match res {
@@ -141,13 +126,12 @@ async fn main() -> Result<()> {
     );
 
     // Await all spawned futures
-    let res = tokio::try_join!(http_handle, vr_controller_handle, mr_controller_handle);
+    let res = tokio::try_join!(vr_controller_handle, mr_controller_handle);
 
     // Release lease
     lease.join().await?;
 
-    // Unwrap all results
-    let (res, (), ()) = res?;
+    // Unwrap result
     res?;
 
     Ok(())

@@ -13,12 +13,13 @@ use kube::{
 use thiserror::Error;
 
 use crate::{
-    config::CONFIG,
+    config::ControllerConfig,
     types::rule::{MutatingRule, ValidatingRule},
 };
 
 pub struct Data {
     pub client: kube::Client,
+    pub config: ControllerConfig,
 }
 
 /// Errors can be raised within reconciler
@@ -73,11 +74,11 @@ pub async fn reconcile_validatingrule(
             timeout_seconds: validating_rule.spec.0.timeout_seconds,
             client_config: WebhookClientConfig {
                 ca_bundle: Some(k8s_openapi::ByteString(
-                    CONFIG.ca_bundle.as_bytes().to_vec(),
+                    ctx.config.ca_bundle.as_bytes().to_vec(),
                 )),
                 service: Some(ServiceReference {
-                    namespace: CONFIG.service_namespace.clone(),
-                    name: CONFIG.service_name.clone(),
+                    namespace: ctx.config.service_namespace.clone(),
+                    name: ctx.config.service_name.clone(),
                     path: Some(format!("/validate/{}", name)),
                     port: Some(443),
                 }),
@@ -139,11 +140,11 @@ pub async fn reconcile_mutatingrule(
             timeout_seconds: mutating_rule.spec.0.timeout_seconds,
             client_config: WebhookClientConfig {
                 ca_bundle: Some(k8s_openapi::ByteString(
-                    CONFIG.ca_bundle.as_bytes().to_vec(),
+                    ctx.config.ca_bundle.as_bytes().to_vec(),
                 )),
                 service: Some(ServiceReference {
-                    namespace: CONFIG.service_namespace.clone(),
-                    name: CONFIG.service_name.clone(),
+                    namespace: ctx.config.service_namespace.clone(),
+                    name: ctx.config.service_name.clone(),
                     path: Some(format!("/mutate/{}", name)),
                     port: Some(443),
                 }),
