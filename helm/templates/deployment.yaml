@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "checkpoint.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.controller.replicaCount | default .Values.replicaCount }}
+  replicas: {{ .Values.controller.replicaCount }}
   selector:
     matchLabels:
       {{- include "checkpoint.selectorLabels.controller" . | nindent 6 }}
@@ -41,10 +41,8 @@ spec:
           value: {{ .Release.Namespace }}
         - name: CONF_SERVICE_NAME
           value: checkpoint-controller-service
-{{- /*
         - name: CONF_SERVICE_PORT
           value: "{{ .Values.controller.service.port }}"
-*/}}
         - name: CONF_CA_BUNDLE
           valueFrom:
             secretKeyRef:
@@ -70,7 +68,7 @@ metadata:
   labels:
     {{- include "checkpoint.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.webhook.replicaCount | default .Values.replicaCount }}
+  replicas: {{ .Values.webhook.replicaCount }}
   selector:
     matchLabels:
       {{- include "checkpoint.selectorLabels.webhook" . | nindent 6 }}

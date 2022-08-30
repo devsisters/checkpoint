@@ -29,6 +29,8 @@ controller:
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
   imagePullSecrets: []
+  service:
+    port: 443
 
 webhook:
   replicaCount: 2
@@ -69,7 +71,6 @@ fullnameOverride: ""
 
 # Fallback values
 # These values will be used unless specified in component
-replicaCount: 2
 podAnnotations: {}
 podSecurityContext: {}
   # fsGroup: 2000
