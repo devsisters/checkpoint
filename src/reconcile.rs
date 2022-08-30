@@ -33,6 +33,97 @@ pub enum Error {
     MutatingWebhookConfigurationCreationFailed(#[source] kube::Error),
 }
 
+fn webhook_client_config(
+    config: &ControllerConfig,
+    path: &str,
+    rule_name: &str,
+) -> WebhookClientConfig {
+    WebhookClientConfig {
+        ca_bundle: Some(k8s_openapi::ByteString(
+            config.ca_bundle.as_bytes().to_vec(),
+        )),
+        service: Some(ServiceReference {
+            namespace: config.service_namespace.clone(),
+            name: config.service_name.clone(),
+            path: Some(format!("/{}/{}", path, rule_name)),
+            port: Some(config.service_port),
+        }),
+        url: None,
+    }
+}
+
+macro_rules! webhook_configuration {
+    (
+        @internal
+        $webhook_configuration_ty:ident,
+        $webhook_ty:ident,
+        $ty:expr,
+        $path:expr,
+        $name:expr,
+        $oref:expr,
+        $spec:expr,
+        $config:expr
+    ) => {
+        $webhook_configuration_ty {
+            metadata: ObjectMeta {
+                name: Some($name.clone()),
+                owner_references: Some(vec![$oref]),
+                ..Default::default()
+            },
+            webhooks: Some(vec![$webhook_ty {
+                name: format!("{}.{}.checkpoint.devsisters.com", $name, $ty),
+                failure_policy: $spec.failure_policy.map(|fp| fp.to_string()),
+                namespace_selector: $spec.namespace_selector,
+                object_selector: $spec.object_selector,
+                rules: $spec.object_rules,
+                timeout_seconds: $spec.timeout_seconds,
+                client_config: webhook_client_config(&$config, $path, &$name),
+                admission_review_versions: vec!["v1".to_string()],
+                side_effects: "None".to_string(),
+                ..Default::default()
+            }]),
+        }
+    };
+    (
+        validate,
+        $name:expr,
+        $oref:expr,
+        $spec:expr,
+        $config:expr
+    ) => {
+        webhook_configuration!(
+            @internal
+            ValidatingWebhookConfiguration,
+            ValidatingWebhook,
+            "validatingwebhook",
+            "validate",
+            $name,
+            $oref,
+            $spec,
+            $config
+        )
+    };
+    (
+        mutate,
+        $name:expr,
+        $oref:expr,
+        $spec:expr,
+        $config:expr
+    ) => {
+        webhook_configuration!(
+            @internal
+            MutatingWebhookConfiguration,
+            MutatingWebhook,
+            "mutatingwebhook",
+            "mutate",
+            $name,
+            $oref,
+            $spec,
+            $config
+        )
+    };
+}
+
 /// ValidatingRule reconciler
 pub async fn reconcile_validatingrule(
     validating_rule: Arc<ValidatingRule>,
@@ -55,40 +146,8 @@ pub async fn reconcile_validatingrule(
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
 
     // Popluate ValidatingWebhookConfiguration
-    let vwc = ValidatingWebhookConfiguration {
-        metadata: ObjectMeta {
-            name: Some(name.clone()),
-            owner_references: Some(vec![oref]),
-            ..Default::default()
-        },
-        webhooks: Some(vec![ValidatingWebhook {
-            name: format!("{}.validatingrule.checkpoint.devsisters.com", name),
-            failure_policy: validating_rule
-                .spec
-                .0
-                .failure_policy
-                .map(|fp| fp.to_string()),
-            namespace_selector: validating_rule.spec.0.namespace_selector,
-            object_selector: validating_rule.spec.0.object_selector,
-            rules: validating_rule.spec.0.object_rules,
-            timeout_seconds: validating_rule.spec.0.timeout_seconds,
-            client_config: WebhookClientConfig {
-                ca_bundle: Some(k8s_openapi::ByteString(
-                    ctx.config.ca_bundle.as_bytes().to_vec(),
-                )),
-                service: Some(ServiceReference {
-                    namespace: ctx.config.service_namespace.clone(),
-                    name: ctx.config.service_name.clone(),
-                    path: Some(format!("/validate/{}", name)),
-                    port: Some(443),
-                }),
-                url: None,
-            },
-            admission_review_versions: vec!["v1".to_string()],
-            side_effects: "None".to_string(),
-            ..Default::default()
-        }]),
-    };
+    let vwc: ValidatingWebhookConfiguration =
+        webhook_configuration!(validate, name, oref, validating_rule.spec.0, ctx.config);
 
     // Create or update ValidatingWebhookConfiguration
     vwc_api
@@ -125,36 +184,8 @@ pub async fn reconcile_mutatingrule(
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
     // Popluate MutatingWebhookConfiguration
-    let mwc = MutatingWebhookConfiguration {
-        metadata: ObjectMeta {
-            name: Some(name.clone()),
-            owner_references: Some(vec![oref]),
-            ..Default::default()
-        },
-        webhooks: Some(vec![MutatingWebhook {
-            name: format!("{}.mutatingrule.checkpoint.devsisters.com", name),
-            failure_policy: mutating_rule.spec.0.failure_policy.map(|fp| fp.to_string()),
-            namespace_selector: mutating_rule.spec.0.namespace_selector,
-            object_selector: mutating_rule.spec.0.object_selector,
-            rules: mutating_rule.spec.0.object_rules,
-            timeout_seconds: mutating_rule.spec.0.timeout_seconds,
-            client_config: WebhookClientConfig {
-                ca_bundle: Some(k8s_openapi::ByteString(
-                    ctx.config.ca_bundle.as_bytes().to_vec(),
-                )),
-                service: Some(ServiceReference {
-                    namespace: ctx.config.service_namespace.clone(),
-                    name: ctx.config.service_name.clone(),
-                    path: Some(format!("/mutate/{}", name)),
-                    port: Some(443),
-                }),
-                url: None,
-            },
-            admission_review_versions: vec!["v1".to_string()],
-            side_effects: "None".to_string(),
-            ..Default::default()
-        }]),
-    };
+    let mwc: MutatingWebhookConfiguration =
+        webhook_configuration!(mutate, name, oref, mutating_rule.spec.0, ctx.config);
 
     // Create or update MutatingWebhookConfiguration
     mwc_api
