@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: checkpoint-controller
+  name: {{ include "checkpoint.fullname" . }}-controller
   labels:
     {{- include "checkpoint.labels" . | nindent 4 }}
 spec:
@@ -26,7 +26,7 @@ spec:
       securityContext:
         {{- toYaml (.Values.controller.podSecurityContext | default .Values.podSecurityContext) | nindent 8 }}
       containers:
-      - name: {{ .Chart.Name }}
+      - name: controller
         securityContext:
           {{- toYaml (.Values.controller.securityContext | default .Values.securityContext) | nindent 10 }}
         image: "{{ .Values.controller.image.repository | default .Values.image.repository }}:{{ .Values.controller.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
@@ -64,7 +64,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: checkpoint-webhook
+  name: {{ include "checkpoint.fullname" . }}-webhook
   labels:
     {{- include "checkpoint.labels" . | nindent 4 }}
 spec:
@@ -89,7 +89,7 @@ spec:
       securityContext:
         {{- toYaml (.Values.webhook.podSecurityContext | default .Values.podSecurityContext) | nindent 8 }}
       containers:
-      - name: {{ .Chart.Name }}
+      - name: webhook
         securityContext:
           {{- toYaml (.Values.webhook.securityContext | default .Values.securityContext) | nindent 10 }}
         image: "{{ .Values.webhook.image.repository | default .Values.image.repository }}:{{ .Values.webhook.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
