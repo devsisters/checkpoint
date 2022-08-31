@@ -34,6 +34,8 @@ async fn shutdown_signal(shutdown_signal_broadcast_tx: Sender<()>) {
         _ = terminate => {},
     }
 
+    tracing::info!("terminate signal received");
+
     let _ = shutdown_signal_broadcast_tx.send(());
 }
 
@@ -58,6 +60,7 @@ async fn main() -> Result<()> {
 
     // Leader election
     // Acquire lease
+    tracing::info!("attempting to acquire leader lease...");
     let hostname = hostname::get()?;
     let hostname = hostname.to_string_lossy();
     let lease_fut = checkpoint::leader_election::Lease::acquire_or_create(
@@ -75,6 +78,9 @@ async fn main() -> Result<()> {
             return Ok(());
         }
     };
+    tracing::info!("acquired lease");
+
+    tracing::info!("spawning controllers...");
 
     // Prepare Kubernetes APIs
     let vr_api = Api::<checkpoint::types::rule::ValidatingRule>::all(client.clone());
@@ -104,6 +110,7 @@ async fn main() -> Result<()> {
                 }
             }),
     );
+    tracing::info!("spawned validatingrule controller");
 
     // Spawn MutatingRule controller
     let mr_controller_handle = tokio::spawn(
@@ -124,12 +131,16 @@ async fn main() -> Result<()> {
                 }
             }),
     );
+    tracing::info!("spawned mutatingrule controller");
 
     // Await all spawned futures
     let res = tokio::try_join!(vr_controller_handle, mr_controller_handle);
+    tracing::info!("controllers terminated");
 
+    tracing::info!("releasing lease...");
     // Release lease
     lease.join().await?;
+    tracing::info!("lease released");
 
     // Unwrap result
     res?;
