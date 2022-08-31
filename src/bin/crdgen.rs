@@ -2,8 +2,6 @@
 //!
 //! Usage: `cargo run --bin crdgen > helm/template/customresourcedefinition.yaml`
 
-use std::collections::BTreeMap;
-
 use itertools::Itertools;
 use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition;
 use kube::CustomResourceExt;
@@ -26,13 +24,10 @@ fn main() {
 }
 
 fn add_label_placeholder(crd: &mut CustomResourceDefinition) {
-    if let Some(map) = &mut crd.metadata.labels {
-        map.insert(LABEL_PLACEHOLDER.into(), LABEL_PLACEHOLDER.into());
-    } else {
-        let mut map = BTreeMap::<String, String>::new();
-        map.insert(LABEL_PLACEHOLDER.into(), LABEL_PLACEHOLDER.into());
-        crd.metadata.labels = Some(map);
-    }
+    crd.metadata
+        .labels
+        .get_or_insert_with(|| Default::default())
+        .insert(LABEL_PLACEHOLDER.into(), LABEL_PLACEHOLDER.into());
 }
 
 fn replace_placeholder(yaml_string: String) -> String {
