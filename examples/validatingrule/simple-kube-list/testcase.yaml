@@ -1,0 +1,37 @@
+validatingRules:
+- rule.yaml
+cases:
+- name: good-empty-unique
+  stubs:
+    kubeList:
+    - parameter:
+        group: ""
+        version: v1
+        kind: Namespace
+      output: kube-list-output.yaml
+  request: request-empty-unique.yaml
+  expected:
+    allowed: true
+- name: bad
+  stubs:
+    kubeList:
+    - parameter:
+        group: ""
+        version: v1
+        kind: Namespace
+      output: kube-list-output.yaml
+  request: request-bad.yaml
+  expected:
+    allowed: false
+    message: Requested namespace has a not unique `unique` annotation
+- name: good
+  stubs:
+    kubeList:
+    - parameter:
+        group: ""
+        version: v1
+        kind: Namespace
+      output: kube-list-output.yaml
+  request: request-good.yaml
+  expected:
+    allowed: true
