@@ -27,7 +27,7 @@ fn add_label_placeholder(crd: &mut CustomResourceDefinition) {
     crd.metadata
         .labels
         .get_or_insert_with(|| Default::default())
-        .insert(LABEL_PLACEHOLDER.into(), LABEL_PLACEHOLDER.into());
+        .insert(LABEL_PLACEHOLDER.to_string(), LABEL_PLACEHOLDER.to_string());
 }
 
 fn replace_placeholder(yaml_string: String) -> String {
