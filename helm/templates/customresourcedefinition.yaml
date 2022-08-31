@@ -3,6 +3,8 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  labels:
+    {{- include "checkpoint.labels" . | nindent 4 }}
   name: validatingrules.checkpoint.devsisters.com
 spec:
   group: checkpoint.devsisters.com
@@ -127,7 +129,7 @@ spec:
                       type: object
                   type: object
                 serviceAccount:
-                  description: The name of ServiceAccount to use to run Lua code.
+                  description: "The name of ServiceAccount to use to run Lua code.\n\nIf you want to use `kube_get` or `kube_list` function in Lua code, you must provide ServiceAccount info with this field."
                   nullable: true
                   properties:
                     name:
@@ -162,6 +164,8 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  labels:
+    {{- include "checkpoint.labels" . | nindent 4 }}
   name: mutatingrules.checkpoint.devsisters.com
 spec:
   group: checkpoint.devsisters.com
@@ -286,7 +290,7 @@ spec:
                       type: object
                   type: object
                 serviceAccount:
-                  description: The name of ServiceAccount to use to run Lua code.
+                  description: "The name of ServiceAccount to use to run Lua code.\n\nIf you want to use `kube_get` or `kube_list` function in Lua code, you must provide ServiceAccount info with this field."
                   nullable: true
                   properties:
                     name:
