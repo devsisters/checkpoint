@@ -1,6 +1,9 @@
+/Dockerfile
+/.dockerignore
+/examples
 /.git
-/target
+/.github
+/.gitignore
 /helm
 /README.md
-/Dockerfile
-/.gitignore
+/target
