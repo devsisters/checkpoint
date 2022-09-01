@@ -1,0 +1,45 @@
+items:
+- metadata:
+    creationTimestamp: '2022-08-17T00:00:00Z'
+    managedFields:
+    - fieldsV1:
+        f:status:
+          f:phase: {}
+      time: '2022-08-17T00:00:00Z'
+      apiVersion: v1
+      manager: kubectl-client-side-apply
+      operation: Update
+      fieldsType: FieldsV1
+    name: foo
+    uid: 00000000-0000-0000-0000-000000000000
+    resourceVersion: "0"
+    annotations:
+      unique: foo
+  spec:
+    finalizers:
+    - kubernetes
+  status:
+    phase: Active
+- metadata:
+    creationTimestamp: '2022-08-17T00:00:00Z'
+    managedFields:
+    - fieldsV1:
+        f:status:
+          f:phase: {}
+      time: '2022-08-17T00:00:00Z'
+      apiVersion: v1
+      manager: kubectl-client-side-apply
+      operation: Update
+      fieldsType: FieldsV1
+    name: bar
+    uid: 00000000-0000-0000-0000-000000000000
+    resourceVersion: "0"
+    annotations:
+      unique: bar
+  spec:
+    finalizers:
+    - kubernetes
+  status:
+    phase: Active
+metadata:
+  resourceVersion: "0"
