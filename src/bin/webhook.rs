@@ -26,6 +26,8 @@ async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
         _ = terminate => {},
     }
 
+    tracing::info!("terminate signal received");
+
     axum_server_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
 }
 
@@ -51,10 +53,12 @@ async fn main() -> Result<()> {
     });
 
     // Spawn HTTP server
+    tracing::info!("starting web server...");
     axum_server::bind_rustls(config.listen_addr.parse()?, tls_config)
         .handle(axum_server_handle)
         .serve(http_app.into_make_service())
         .await?;
+    tracing::info!("web server terminated");
 
     Ok(())
 }
