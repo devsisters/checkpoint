@@ -201,7 +201,7 @@ pub async fn reconcile_mutatingrule(
 }
 
 /// When error occurred, log it and requeue after three seconds
-pub fn error_policy(error: &Error, _ctx: Arc<Data>) -> Action {
+pub fn error_policy<T>(_rule: Arc<T>, error: &Error, _ctx: Arc<Data>) -> Action {
     tracing::error!(%error);
     Action::requeue(Duration::from_secs(3))
 }
