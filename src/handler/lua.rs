@@ -1,22 +1,17 @@
 use std::cell::Ref;
 
-use k8s_openapi::api::{
-    authentication::v1::{TokenRequest, TokenRequestSpec},
-    core::v1::ServiceAccount,
-};
+use k8s_openapi::api::authentication::v1::{TokenRequest, TokenRequestSpec};
 use kube::{
     api::{ApiResource, ListParams},
-    core::{admission::AdmissionRequest, GroupVersionKind, Object},
-    Api, Client, Resource,
+    config::AuthInfo,
+    core::{admission::AdmissionRequest, DynamicObject, GroupVersionKind, Object},
+    Api, Client,
 };
 use mlua::{Lua, LuaSerdeExt, Value};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-use crate::{
-    handler::Error,
-    types::{rule::ServiceAccountInfo, DynamicObjectWithOptionalMetadata},
-};
+use crate::{handler::Error, types::rule::ServiceAccountInfo};
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
@@ -26,7 +21,7 @@ struct LuaContextAppData {
 pub(super) async fn eval_lua_code<T>(
     lua: Lua,
     code: String,
-    admission_req: AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    admission_req: AdmissionRequest<DynamicObject>,
 ) -> Result<T, Error>
 where
     for<'a> T: mlua::FromLuaMulti<'a> + Send + 'static,

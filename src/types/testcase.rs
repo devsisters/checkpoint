@@ -5,15 +5,12 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
-use kube::core::{admission::AdmissionRequest, ObjectList};
+use kube::core::{admission::AdmissionRequest, DynamicObject, ObjectList};
 use serde::{de::DeserializeOwned, Deserialize};
 
 use crate::{
     handler::lua::{KubeGetArgument, KubeListArgument},
-    types::{
-        rule::{MutatingRule, ValidatingRule},
-        DynamicObjectWithOptionalMetadata,
-    },
+    types::rule::{MutatingRule, ValidatingRule},
 };
 
 /// Path of a YAML file that contains object definition or object itself
@@ -99,7 +96,7 @@ pub struct Case {
     pub name: Option<String>,
     #[serde(default)]
     pub stubs: Stub,
-    pub request: FilePathOrObject<AdmissionRequest<DynamicObjectWithOptionalMetadata>>,
+    pub request: FilePathOrObject<AdmissionRequest<DynamicObject>>,
     pub expected: Expected,
 }
 
@@ -107,9 +104,9 @@ pub struct Case {
 #[serde(rename_all = "camelCase")]
 pub struct Stub {
     #[serde(default)]
-    pub kube_get: Vec<StubSpec<KubeGetArgument, Option<DynamicObjectWithOptionalMetadata>>>,
+    pub kube_get: Vec<StubSpec<KubeGetArgument, Option<DynamicObject>>>,
     #[serde(default)]
-    pub kube_list: Vec<StubSpec<KubeListArgument, ObjectList<DynamicObjectWithOptionalMetadata>>>,
+    pub kube_list: Vec<StubSpec<KubeListArgument, ObjectList<DynamicObject>>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -125,5 +122,5 @@ pub struct Expected {
     #[serde(default)]
     pub message: Option<String>,
     #[serde(default)]
-    pub final_object: Option<FilePathOrObject<DynamicObjectWithOptionalMetadata>>,
+    pub final_object: Option<FilePathOrObject<DynamicObject>>,
 }

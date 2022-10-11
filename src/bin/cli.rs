@@ -8,7 +8,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use itertools::Itertools;
-use kube::core::{admission::AdmissionRequest, ObjectList};
+use kube::core::{admission::AdmissionRequest, DynamicObject, ObjectList};
 use mlua::{Lua, LuaSerdeExt};
 use tracing::Instrument;
 
@@ -20,7 +20,6 @@ use checkpoint::{
     types::{
         rule::{MutatingRule, ValidatingRule},
         testcase::{Case, TestCase},
-        DynamicObjectWithOptionalMetadata,
     },
 };
 
@@ -45,7 +44,7 @@ struct TestArgs {
 struct CaseResult {
     allowed: bool,
     message: Option<String>,
-    final_object: Option<DynamicObjectWithOptionalMetadata>,
+    final_object: Option<DynamicObject>,
 }
 
 #[tokio::main]
@@ -124,6 +123,20 @@ async fn run_test_case(test_case_path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+// TODO: Remove when https://github.com/kube-rs/kube/pull/1048 is merged and released
+fn eq_option_dynamic_object(left: &Option<DynamicObject>, right: &Option<DynamicObject>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(_), None) => false,
+        (None, Some(_)) => false,
+        (Some(left), Some(right)) => {
+            left.types.eq(&right.types)
+                && left.metadata.eq(&right.metadata)
+                && left.data.eq(&right.data)
+        }
+    }
 }
 
 async fn run_case(
@@ -241,7 +254,7 @@ async fn run_case(
             actual.message
         ));
     }
-    if expected.final_object != actual.final_object {
+    if !eq_option_dynamic_object(&expected.final_object, &actual.final_object) {
         return Err(anyhow!(
             "test failed. `finalObject` expected: {}, actual: {}",
             serde_json::to_string(&expected.final_object)
@@ -257,7 +270,7 @@ async fn run_case(
 
 async fn run_mutating_rule(
     rule: &MutatingRule,
-    request: &mut AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    request: &mut AdmissionRequest<DynamicObject>,
     lua_app_data: LuaContextAppData,
 ) -> Result<CaseResult> {
     let lua = prepare_lua_ctx(lua_app_data).context("failed to prepare Lua context")?;
@@ -299,7 +312,7 @@ async fn run_mutating_rule(
 
 async fn run_validating_rule(
     rule: &ValidatingRule,
-    request: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    request: &AdmissionRequest<DynamicObject>,
     lua_app_data: LuaContextAppData,
 ) -> Result<CaseResult> {
     let lua = prepare_lua_ctx(lua_app_data).context("failed to prepare Lua context")?;
@@ -317,9 +330,8 @@ async fn run_validating_rule(
 
 #[derive(Clone)]
 struct LuaContextAppData {
-    kube_get_stub_map: Arc<HashMap<KubeGetArgument, Option<DynamicObjectWithOptionalMetadata>>>,
-    kube_list_stub_map:
-        Arc<HashMap<KubeListArgument, ObjectList<DynamicObjectWithOptionalMetadata>>>,
+    kube_get_stub_map: Arc<HashMap<KubeGetArgument, Option<DynamicObject>>>,
+    kube_list_stub_map: Arc<HashMap<KubeListArgument, ObjectList<DynamicObject>>>,
 }
 
 /// Prepare test Lua context with stubs
