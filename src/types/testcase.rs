@@ -120,7 +120,7 @@ pub struct StubSpec<P, O> {
 pub struct Expected {
     pub allowed: bool,
     #[serde(default)]
-    pub message: Option<String>,
+    pub message: String,
     #[serde(default)]
     pub final_object: Option<FilePathOrObject<DynamicObject>>,
 }

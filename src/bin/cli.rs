@@ -43,7 +43,7 @@ struct TestArgs {
 #[derive(Debug)]
 struct CaseResult {
     allowed: bool,
-    message: Option<String>,
+    message: String,
     final_object: Option<DynamicObject>,
 }
 
@@ -192,7 +192,7 @@ async fn run_case(
     };
     let mut actual = CaseResult {
         allowed: true,
-        message: None,
+        message: String::new(),
         final_object: request.object.clone(),
     };
 
