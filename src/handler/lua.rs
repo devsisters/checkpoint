@@ -72,66 +72,42 @@ where
     rx.await.map_err(Error::RecvLuaThread)?
 }
 
-/// Create a TokenRequest of a ServiceAccount
-///
-/// Workaround before https://github.com/kube-rs/kube-rs/pull/989 is merged and released.
-async fn create_token_request(
-    client: Client,
-    name: &str,
-    namespace: &str,
-    token_request: &TokenRequest,
-) -> kube::Result<TokenRequest> {
-    let url_path = format!(
-        "{}/{}/token",
-        ServiceAccount::url_path(
-            &<ServiceAccount as Resource>::DynamicType::default(),
-            Some(namespace)
-        ),
-        name
-    );
-    let body = serde_json::to_vec(token_request).map_err(kube::Error::SerdeError)?;
-    let mut req = http::Request::post(url_path)
-        .header(http::header::CONTENT_TYPE, "application/json")
-        .body(body)
-        .map_err(|e| kube::Error::BuildRequest(kube::core::request::Error::BuildRequest(e)))?;
-    req.extensions_mut().insert("create_token_request");
-    client.request(req).await
-}
-
 /// Prepare Kubernetes client with specified ServiceAccount info in Rule spec
 async fn prepare_kube_client(
     client: Client,
     serviceaccount_info: &ServiceAccountInfo,
     timeout_seconds: Option<i32>,
 ) -> Result<kube::Client, Error> {
+    let sa_api = Api::namespaced(client, &serviceaccount_info.namespace);
+
     // Retrieve token from ServiceAccount
-    let tr = create_token_request(
-        client,
-        &serviceaccount_info.name,
-        &serviceaccount_info.namespace,
-        &TokenRequest {
-            metadata: Default::default(),
-            spec: TokenRequestSpec {
-                audiences: vec!["https://kubernetes.default.svc.cluster.local".to_string()],
-                // expirationSeconds should greater than 10 minutes
-                expiration_seconds: Some(std::cmp::max(
-                    timeout_seconds.unwrap_or(10).into(),
-                    10 * 60,
-                )),
-                ..Default::default()
+    let tr = sa_api
+        .create_token_request(
+            &serviceaccount_info.name,
+            &Default::default(),
+            &TokenRequest {
+                metadata: Default::default(),
+                spec: TokenRequestSpec {
+                    audiences: vec!["https://kubernetes.default.svc.cluster.local".to_string()],
+                    // expirationSeconds should greater than 10 minutes
+                    expiration_seconds: Some(std::cmp::max(
+                        timeout_seconds.unwrap_or(10).into(),
+                        10 * 60,
+                    )),
+                    ..Default::default()
+                },
+                status: None,
             },
-            status: None,
-        },
-    )
-    .await
-    .map_err(|error| {
-        if let kube::Error::Api(ref api_error) = error {
-            if api_error.code == 404 {
-                return Error::ServiceAccountNotFound;
+        )
+        .await
+        .map_err(|error| {
+            if let kube::Error::Api(ref api_error) = error {
+                if api_error.code == 404 {
+                    return Error::ServiceAccountNotFound;
+                }
             }
-        }
-        Error::Kubernetes(error)
-    })?;
+            Error::Kubernetes(error)
+        })?;
     let token = tr.status.ok_or(Error::RequestServiceAccountToken)?.token;
 
     // Default config from env
