@@ -20,6 +20,7 @@ fn main() {
         let yaml_string = serde_yaml::to_string(crd).unwrap();
         let yaml_string = replace_placeholder(yaml_string);
         println!("{}", yaml_string);
+        println!("---");
     }
 }
 
