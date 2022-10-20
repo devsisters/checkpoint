@@ -11,10 +11,7 @@ use kube::{
 };
 use mlua::{Lua, LuaSerdeExt};
 
-use crate::types::{
-    rule::{MutatingRule, RuleSpec, ValidatingRule},
-    DynamicObjectWithOptionalMetadata,
-};
+use crate::types::rule::{MutatingRule, RuleSpec, ValidatingRule};
 
 /// Prepare HTTP router
 pub fn create_app(kube_client: kube::Client) -> Router {
@@ -81,7 +78,7 @@ async fn ping() -> &'static str {
 async fn validate_handler(
     extract::Extension(kube_client): extract::Extension<kube::Client>,
     extract::Path(rule_name): extract::Path<String>,
-    extract::Json(req): extract::Json<AdmissionReview<DynamicObjectWithOptionalMetadata>>,
+    extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
     // Convert AdmissionReview into AdmissionRequest
     // and reject if fails
@@ -125,7 +122,7 @@ async fn validate_handler(
 /// Actual validating function
 pub async fn validate(
     rule_spec: &RuleSpec,
-    req: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    req: &AdmissionRequest<DynamicObject>,
     lua: Lua,
 ) -> Result<AdmissionResponse, Error> {
     // Evaluate Lua code and get `deny_reason`
@@ -148,7 +145,7 @@ pub async fn validate(
 async fn mutate_handler(
     extract::Extension(kube_client): extract::Extension<kube::Client>,
     extract::Path(rule_name): extract::Path<String>,
-    extract::Json(req): extract::Json<AdmissionReview<DynamicObjectWithOptionalMetadata>>,
+    extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
     // Convert AdmissionReview into AdmissionRequest
     // and reject if fails
@@ -202,7 +199,7 @@ impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
 /// Actual mutating function
 pub async fn mutate(
     rule_spec: &RuleSpec,
-    req: &AdmissionRequest<DynamicObjectWithOptionalMetadata>,
+    req: &AdmissionRequest<DynamicObject>,
     lua: Lua,
 ) -> Result<AdmissionResponse, Error> {
     // Evaluate Lua code and get `deny_reason` and `patch`
