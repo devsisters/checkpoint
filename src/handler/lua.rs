@@ -173,6 +173,8 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
     register_lua_function!("debugPrint", lua_debug_print);
     register_lua_function!("deepcopy", lua_deepcopy);
     register_lua_function!("jsonpatchDiff", lua_jsonpatch_diff);
+    register_lua_function!("startsWith", lua_starts_with);
+    register_lua_function!("endsWith", lua_ends_with);
     register_lua_function!("kubeGet", lua_kube_get, async);
     register_lua_function!("kubeList", lua_kube_list, async);
 
@@ -215,6 +217,16 @@ fn lua_jsonpatch_diff<'lua>(
             .serialize_none_to_null(false)
             .serialize_unit_to_null(false),
     )
+}
+
+// Lua helper function to check first string starts with second string
+fn lua_starts_with(_lua: &Lua, (s1, s2): (String, String)) -> mlua::Result<bool> {
+    Ok(s1.starts_with(&s2))
+}
+
+// Lua helper function to check first string ends with second string
+fn lua_ends_with(_lua: &Lua, (s1, s2): (String, String)) -> mlua::Result<bool> {
+    Ok(s1.ends_with(&s2))
 }
 
 fn extract_kube_client_from_lua_ctx(lua: &Lua) -> mlua::Result<Client> {

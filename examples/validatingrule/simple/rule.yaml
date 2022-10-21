@@ -10,6 +10,6 @@ spec:
     operations: ["CREATE"]
   code: |
     request = ...
-    if request.name:sub(-4) ~= "-uwu" then
+    if not endsWith(request.name, "-uwu") then
       return "That name is not cute."
     end
