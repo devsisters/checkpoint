@@ -7,11 +7,11 @@ jobs:
   example-testcases:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: actions-rs/toolchain@v1
       with:
         profile: minimal
         toolchain: stable
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
     - name: Run example testcases
       run: cargo run --bin checkpoint -- test $(find -type f -iname testcase.yaml)
