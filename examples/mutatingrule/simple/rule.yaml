@@ -11,6 +11,6 @@ spec:
   code: |
     request = ...
     name = request.object.metadata.name
-    if name:sub(-4) ~= "-uwu" then
+    if not endsWith(name, "-uwu") then
       return nil, {{op="replace", path="/metadata/name", value=name .. "-uwu"}}
     end
