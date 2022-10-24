@@ -8,14 +8,14 @@ fn default_listen_addr() -> String {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ControllerConfig {
-    /// Installed Kubernetes Service namespace of the controller
+    /// Installed Kubernetes Service namespace of the checkpoint webhook
     pub service_namespace: String,
-    /// Installed Kubernetes Service name of the controller
+    /// Installed Kubernetes Service name of the checkpoint webhook
     pub service_name: String,
-    /// Installed Kubernetes Service port of the controller
+    /// Installed Kubernetes Service port of the checkpoint webhook
     pub service_port: i32,
 
-    /// Base64 encoded PEM CA bundle for controller
+    /// Base64 encoded PEM CA bundle for the checkpoint webhook
     pub ca_bundle: String,
 }
 
