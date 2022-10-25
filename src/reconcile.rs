@@ -17,7 +17,7 @@ use crate::{
     types::rule::{MutatingRule, ValidatingRule},
 };
 
-pub struct Data {
+pub struct ReconcilerContext {
     pub client: kube::Client,
     pub config: ControllerConfig,
 }
@@ -127,7 +127,7 @@ macro_rules! webhook_configuration {
 /// ValidatingRule reconciler
 pub async fn reconcile_validatingrule(
     validating_rule: Arc<ValidatingRule>,
-    ctx: Arc<Data>,
+    ctx: Arc<ReconcilerContext>,
 ) -> Result<Action, Error> {
     // Get Kubernetes client from context data
     let client = &ctx.client;
@@ -165,7 +165,7 @@ pub async fn reconcile_validatingrule(
 /// MutatingRule reconciler
 pub async fn reconcile_mutatingrule(
     mutating_rule: Arc<MutatingRule>,
-    ctx: Arc<Data>,
+    ctx: Arc<ReconcilerContext>,
 ) -> Result<Action, Error> {
     // Get Kubernetes client from context data
     let client = &ctx.client;
@@ -201,7 +201,7 @@ pub async fn reconcile_mutatingrule(
 }
 
 /// When error occurred, log it and requeue after three seconds
-pub fn error_policy<T>(_rule: Arc<T>, error: &Error, _ctx: Arc<Data>) -> Action {
+pub fn error_policy<T>(_rule: Arc<T>, error: &Error, _ctx: Arc<ReconcilerContext>) -> Action {
     tracing::error!(%error);
     Action::requeue(Duration::from_secs(3))
 }
