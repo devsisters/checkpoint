@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
             .run(
                 checkpoint::reconcile::reconcile_validatingrule,
                 checkpoint::reconcile::error_policy,
-                Arc::new(checkpoint::reconcile::Data {
+                Arc::new(checkpoint::reconcile::ReconcilerContext {
                     client: client.clone(),
                     config: config.clone(),
                 }),
@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
             .run(
                 checkpoint::reconcile::reconcile_mutatingrule,
                 checkpoint::reconcile::error_policy,
-                Arc::new(checkpoint::reconcile::Data { client, config }),
+                Arc::new(checkpoint::reconcile::ReconcilerContext { client, config }),
             )
             .for_each(|res| async move {
                 match res {
