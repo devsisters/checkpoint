@@ -240,6 +240,7 @@ fn extract_kube_client_from_lua_ctx(lua: &Lua) -> mlua::Result<Client> {
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct KubeGetArgument {
     pub group: String,
     pub version: String,
@@ -291,6 +292,7 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct KubeListArgument {
     pub group: String,
     pub version: String,
@@ -305,6 +307,7 @@ fn default_kube_list_argument_list_params_bookmarks() -> bool {
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct KubeListArgumentListParams {
     pub label_selector: Option<String>,
     pub field_selector: Option<String>,
