@@ -11,8 +11,8 @@ spec:
   code: |
     request = ...
     if request.object.metadata.name:sub(-4) ~= "-uwu" then
-      newObject = deepcopy(request.object)
+      newObject = deepCopy(request.object)
       newObject.metadata.name = request.object.metadata.name .. "-uwu"
-      patch = jsonpatchDiff(request.object, newObject)
+      patch = jsonPatchDiff(request.object, newObject)
       return nil, patch
     end
