@@ -1,0 +1,48 @@
+uid: 00000000-0000-0000-0000-000000000000
+kind:
+  group: ""
+  version: v1
+  kind: Namespace
+resource:
+  group: ""
+  version: v1
+  resource: namespaces
+requestKind:
+  group: ""
+  version: v1
+  kind: Namespace
+requestResource:
+  group: ""
+  version: v1
+  resource: namespaces
+name: owo-foobar-uwu
+namespace: foobar
+operation: CREATE
+userInfo:
+  username: kubernetes-admin
+  groups:
+  - system:masters
+  - system:authenticated
+object:
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: owo-foobar-uwu
+    uid: 00000000-0000-0000-0000-000000000000
+    creationTimestamp: 2022-08-24T00:00:00Z
+    managedFields:
+    - fieldsV1:
+         f:status:
+           f:phase: {}
+      time: '2022-08-24T00:00:00Z'
+      apiVersion: v1
+      manager: kubectl-create
+      operation: Update
+      fieldsType: FieldsV1
+  status:
+    phase: Active
+options:
+  apiVersion: meta.k8s.io/v1
+  kind: CreateOptions
+  fieldManager: kubectl-create
+dryRun: false

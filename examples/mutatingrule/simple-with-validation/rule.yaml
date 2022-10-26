@@ -1,0 +1,19 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: MutatingRule
+metadata:
+  name: mutate-and-validate-namespace-name-cute
+spec:
+  objectRules:
+  - apiGroups: [""]
+    apiVersions: ["*"]
+    resources: ["namespaces"]
+    operations: ["CREATE"]
+  code: |
+    request = ...
+    name = request.object.metadata.name
+    if not startsWith(name, "owo-") then
+      return "That name is not cute."
+    end
+    if not endsWith(name, "-uwu") then
+      return nil, {{op="replace", path="/metadata/name", value=name .. "-uwu"}}
+    end
