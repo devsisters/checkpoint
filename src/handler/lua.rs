@@ -171,8 +171,8 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
 
     // Register all Lua helper functions
     register_lua_function!("debugPrint", lua_debug_print);
-    register_lua_function!("deepcopy", lua_deepcopy);
-    register_lua_function!("jsonpatchDiff", lua_jsonpatch_diff);
+    register_lua_function!("deepCopy", lua_deepcopy);
+    register_lua_function!("jsonPatchDiff", lua_jsonpatch_diff);
     register_lua_function!("startsWith", lua_starts_with);
     register_lua_function!("endsWith", lua_ends_with);
     register_lua_function!("kubeGet", lua_kube_get, async);
