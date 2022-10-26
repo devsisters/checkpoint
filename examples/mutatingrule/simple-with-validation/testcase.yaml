@@ -1,0 +1,15 @@
+mutatingRules:
+- rule.yaml
+cases:
+- request: request-bad.yaml
+  expected:
+    allowed: false
+    message: That name is not cute.
+- request: request-good.yaml
+  expected:
+    allowed: true
+    finalObject: result.yaml
+- request: request-great.yaml
+  expected:
+    allowed: true
+    finalObject: result.yaml
