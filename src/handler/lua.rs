@@ -25,6 +25,18 @@ where
     )
 }
 
+fn lua_from_value<'lua, T>(lua: &'lua Lua, value: Value<'lua>) -> mlua::Result<T>
+where
+    T: Deserialize<'lua>,
+{
+    lua.from_value_with(
+        value,
+        mlua::DeserializeOptions::new()
+            .deny_unsupported_types(false)
+            .deny_recursive_tables(false),
+    )
+}
+
 struct LuaContextAppData {
     kube_client: Option<Client>,
 }
@@ -189,7 +201,7 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
 
 /// Lua helper function to debug-print Lua value with JSON format
 fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
-    let v_json: serde_json::Value = lua.from_value(v)?;
+    let v_json: serde_json::Value = lua_from_value(lua, v)?;
     tracing::info!(
         "debug print fron Lua code: {}",
         serde_json::to_string(&v_json).map_err(mlua::Error::external)?
@@ -200,7 +212,7 @@ fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
 // Lua helper function to deep-copy a Lua value
 fn lua_deepcopy<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<Value<'lua>> {
     // Convert Lua value to JSON value and convert back to deep-copy
-    let v_json: serde_json::Value = lua.from_value(v)?;
+    let v_json: serde_json::Value = lua_from_value(lua, v)?;
     lua_to_value(lua, &v_json)
 }
 
@@ -209,8 +221,8 @@ fn lua_jsonpatch_diff<'lua>(
     lua: &'lua Lua,
     (v1, v2): (Value<'lua>, Value<'lua>),
 ) -> mlua::Result<Value<'lua>> {
-    let v1_json: serde_json::Value = lua.from_value(v1)?;
-    let v2_json: serde_json::Value = lua.from_value(v2)?;
+    let v1_json: serde_json::Value = lua_from_value(lua, v1)?;
+    let v2_json: serde_json::Value = lua_from_value(lua, v2)?;
     let patch = json_patch::diff(&v1_json, &v2_json);
     lua_to_value(lua, &patch)
 }
@@ -256,7 +268,7 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
         plural,
         namespace,
         name,
-    } = lua.from_value(argument)?;
+    } = lua_from_value(lua, argument)?;
 
     // Prepare GroupVersionKind and ApiResource from argument
     let gvk = GroupVersionKind::gvk(&group, &version, &kind);
@@ -319,7 +331,7 @@ async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Res
         plural,
         namespace,
         list_params,
-    } = lua.from_value(argument)?;
+    } = lua_from_value(lua, argument)?;
     let list_params = list_params
         .map(
             |KubeListArgumentListParams {
