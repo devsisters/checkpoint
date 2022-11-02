@@ -13,5 +13,5 @@ spec:
   duration: 2160h # 90d
   renewBefore: 360h # 15d
   issuerRef:
-    name: selfsigned
+    name: {{ include "checkpoint.issuerName" . }}
     kind: Issuer

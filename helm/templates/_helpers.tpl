@@ -59,3 +59,7 @@ app.kubernetes.io/component: controller
 {{ include "checkpoint.selectorLabels.common" . }}
 app.kubernetes.io/component: webhook
 {{- end }}
+
+{{- define "checkpoint.issuerName" -}}
+{{ include "checkpoint.fullname" . }}-selfsigned
+{{- end -}}

@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: selfsigned
+  name: {{ include "checkpoint.issuerName" . }}
   namespace: {{ .Release.Namespace }}
 spec:
   selfSigned: {}

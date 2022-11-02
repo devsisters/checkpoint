@@ -1,10 +1,12 @@
-use anyhow::Result;
-use axum_server::tls_rustls::RustlsConfig;
-use checkpoint::config::WebhookConfig;
-use notify::{RecursiveMode, Watcher};
 use std::io;
 use std::path::Path;
+
+use anyhow::Result;
+use axum_server::tls_rustls::RustlsConfig;
+use notify::{RecursiveMode, Watcher};
 use tokio::runtime::Handle;
+
+use checkpoint::config::WebhookConfig;
 
 /// Generate future that awaits shutdown signal
 async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
@@ -67,13 +69,13 @@ async fn main() -> Result<()> {
                     Ok(_) => {
                         tracing::info!("TLS certificate reloaded");
                     }
-                    Err(e) => {
-                        tracing::error!(%e, "Failed to reload cert");
+                    Err(error) => {
+                        tracing::error!(%error, "Failed to reload cert");
                     }
                 }
             }
-            Err(e) => {
-                tracing::error!(%e, "Failed to watch cert");
+            Err(error) => {
+                tracing::error!(%error, "Failed to watch cert");
             }
         }
     })?;
