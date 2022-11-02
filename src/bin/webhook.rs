@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use notify::{RecursiveMode, Watcher};
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 
 use checkpoint::config::WebhookConfig;
 
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
         tracing::info!("Reloading TLS certificate");
         match res {
             Ok(_) => {
-                let rt = Handle::current();
+                let rt = Runtime::new().unwrap();
                 let reload_res = rt.block_on(reload_config(&watcher_config, &watcher_tls_config));
                 match reload_res {
                     Ok(_) => {
