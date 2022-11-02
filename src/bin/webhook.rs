@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
-use checkpoint::config::WebhokConfig;
+use checkpoint::config::WebhookConfig;
 use notify::{RecursiveMode, Watcher};
 use std::io;
 use std::path::Path;
@@ -35,7 +35,7 @@ async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
     axum_server_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
 }
 
-async fn reload_config(config: &WebhokConfig, tls_config: &RustlsConfig) -> Result<(), io::Error> {
+async fn reload_config(config: &WebhookConfig, tls_config: &RustlsConfig) -> Result<(), io::Error> {
     tls_config
         .reload_from_pem_file(&config.cert_path, &config.key_path)
         .await
@@ -45,7 +45,7 @@ async fn reload_config(config: &WebhokConfig, tls_config: &RustlsConfig) -> Resu
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let config: WebhokConfig = envy::prefixed("CONF_").from_env()?;
+    let config: WebhookConfig = envy::prefixed("CONF_").from_env()?;
     let kube_config = kube::Config::infer().await?;
     let client: kube::Client = kube_config.try_into()?;
 

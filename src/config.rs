@@ -20,7 +20,7 @@ pub struct ControllerConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct WebhokConfig {
+pub struct WebhookConfig {
     /// Certificate path for HTTPS
     pub cert_path: PathBuf,
     /// Certificate key path for HTTPS
