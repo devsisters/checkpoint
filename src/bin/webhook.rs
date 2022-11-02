@@ -4,7 +4,7 @@ use checkpoint::config::WebhokConfig;
 use notify::{RecursiveMode, Watcher};
 use std::io;
 use std::path::Path;
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 
 /// Generate future that awaits shutdown signal
 async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
@@ -58,13 +58,15 @@ async fn main() -> Result<()> {
     let watcher_tls_config = tls_config.clone();
     let watcher_config = config.clone();
     let mut watcher = notify::recommended_watcher(move |res| {
-        tracing::info!("Rotating TLS certificate");
+        tracing::info!("Reloading TLS certificate");
         match res {
             Ok(_) => {
-                let rt = Runtime::new().unwrap();
+                let rt = Handle::current();
                 let reload_res = rt.block_on(reload_config(&watcher_config, &watcher_tls_config));
                 match reload_res {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        tracing::info!("TLS certificate reloaded");
+                    }
                     Err(e) => {
                         tracing::error!(%e, "Failed to reload cert");
                     }
