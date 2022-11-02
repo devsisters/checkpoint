@@ -59,12 +59,13 @@ async fn main() -> Result<()> {
 
     let watcher_tls_config = tls_config.clone();
     let watcher_config = config.clone();
+    let watcher_async_runtime = Runtime::new().unwrap();
     let mut watcher = notify::recommended_watcher(move |res| {
         tracing::info!("Reloading TLS certificate");
         match res {
             Ok(_) => {
-                let rt = Runtime::new().unwrap();
-                let reload_res = rt.block_on(reload_config(&watcher_config, &watcher_tls_config));
+                let reload_res = watcher_async_runtime
+                    .block_on(reload_config(&watcher_config, &watcher_tls_config));
                 match reload_res {
                     Ok(_) => {
                         tracing::info!("TLS certificate reloaded");
