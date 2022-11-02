@@ -1,6 +1,10 @@
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
 use checkpoint::config::WebhokConfig;
+use notify::{RecursiveMode, Watcher};
+use std::io;
+use std::path::Path;
+use tokio::runtime::Runtime;
 
 /// Generate future that awaits shutdown signal
 async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
@@ -31,6 +35,12 @@ async fn shutdown_signal(axum_server_handle: axum_server::Handle) {
     axum_server_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
 }
 
+async fn reload_config(config: &WebhokConfig, tls_config: &RustlsConfig) -> Result<(), io::Error> {
+    tls_config
+        .reload_from_pem_file(&config.cert_path, &config.key_path)
+        .await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -44,6 +54,29 @@ async fn main() -> Result<()> {
 
     // Prepare TLS config for HTTPS serving
     let tls_config = RustlsConfig::from_pem_file(&config.cert_path, &config.key_path).await?;
+
+    let watcher_tls_config = tls_config.clone();
+    let watcher_config = config.clone();
+    let mut watcher = notify::recommended_watcher(move |res| {
+        tracing::info!("Rotating TLS certificate");
+        match res {
+            Ok(_) => {
+                let rt = Runtime::new().unwrap();
+                let reload_res = rt.block_on(reload_config(&watcher_config, &watcher_tls_config));
+                match reload_res {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::error!(%e, "Failed to reload cert");
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!(%e, "Failed to watch cert");
+            }
+        }
+    })?;
+    watcher.watch(Path::new(&config.cert_path), RecursiveMode::NonRecursive)?;
+    watcher.watch(Path::new(&config.key_path), RecursiveMode::NonRecursive)?;
 
     // Prepare shutdown signal futures
     let axum_server_handle = axum_server::Handle::new();
