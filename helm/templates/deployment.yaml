@@ -47,7 +47,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: {{ include "checkpoint.fullname" . }}-cert
-              key: cert.pem
+              key: ca.crt
       {{- with .Values.controller.nodeSelector | default .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -103,9 +103,9 @@ spec:
         - name: RUST_LOG
           value: info
         - name: CONF_CERT_PATH
-          value: /tmp/cert/cert.pem
+          value: /tmp/cert/tls.crt
         - name: CONF_KEY_PATH
-          value: /tmp/cert/key.pem
+          value: /tmp/cert/tls.key
         volumeMounts:
         - name: certs
           mountPath: /tmp/cert
