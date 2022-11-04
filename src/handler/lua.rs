@@ -8,10 +8,34 @@ use kube::{
     Api, Client,
 };
 use mlua::{Lua, LuaSerdeExt, Value};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{handler::Error, types::rule::ServiceAccountInfo};
+
+fn lua_to_value<'lua, T>(lua: &'lua Lua, value: &T) -> mlua::Result<Value<'lua>>
+where
+    T: Serialize + ?Sized,
+{
+    lua.to_value_with(
+        value,
+        mlua::SerializeOptions::new()
+            .serialize_none_to_null(false)
+            .serialize_unit_to_null(false),
+    )
+}
+
+fn lua_from_value<'lua, T>(lua: &'lua Lua, value: Value<'lua>) -> mlua::Result<T>
+where
+    T: Deserialize<'lua>,
+{
+    lua.from_value_with(
+        value,
+        mlua::DeserializeOptions::new()
+            .deny_unsupported_types(false)
+            .deny_recursive_tables(false),
+    )
+}
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
@@ -41,13 +65,7 @@ where
                 // Block on current thread
                 runtime.block_on(async move {
                     // Serialize AdmissionRequest to Lua value
-                    let admission_req_lua_value = lua
-                        .to_value_with(
-                            &admission_req,
-                            mlua::SerializeOptions::new()
-                                .serialize_none_to_null(false)
-                                .serialize_unit_to_null(false),
-                        )
+                    let admission_req_lua_value = lua_to_value(&lua, &admission_req)
                         .map_err(Error::ConvertAdmissionRequestToLuaValue)?;
 
                     // Load Lua code chunk
@@ -183,7 +201,7 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
 
 /// Lua helper function to debug-print Lua value with JSON format
 fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
-    let v_json: serde_json::Value = lua.from_value(v)?;
+    let v_json: serde_json::Value = lua_from_value(lua, v)?;
     tracing::info!(
         "debug print fron Lua code: {}",
         serde_json::to_string(&v_json).map_err(mlua::Error::external)?
@@ -194,13 +212,8 @@ fn lua_debug_print<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<()> {
 // Lua helper function to deep-copy a Lua value
 fn lua_deepcopy<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<Value<'lua>> {
     // Convert Lua value to JSON value and convert back to deep-copy
-    let v_json: serde_json::Value = lua.from_value(v)?;
-    lua.to_value_with(
-        &v_json,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
+    let v_json: serde_json::Value = lua_from_value(lua, v)?;
+    lua_to_value(lua, &v_json)
 }
 
 // Lua helper function to generate jsonpatch with diff of two table
@@ -208,15 +221,10 @@ fn lua_jsonpatch_diff<'lua>(
     lua: &'lua Lua,
     (v1, v2): (Value<'lua>, Value<'lua>),
 ) -> mlua::Result<Value<'lua>> {
-    let v1_json: serde_json::Value = lua.from_value(v1)?;
-    let v2_json: serde_json::Value = lua.from_value(v2)?;
+    let v1_json: serde_json::Value = lua_from_value(lua, v1)?;
+    let v2_json: serde_json::Value = lua_from_value(lua, v2)?;
     let patch = json_patch::diff(&v1_json, &v2_json);
-    lua.to_value_with(
-        &patch,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
+    lua_to_value(lua, &patch)
 }
 
 // Lua helper function to check first string starts with second string
@@ -260,7 +268,7 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
         plural,
         namespace,
         name,
-    } = lua.from_value(argument)?;
+    } = lua_from_value(lua, argument)?;
 
     // Prepare GroupVersionKind and ApiResource from argument
     let gvk = GroupVersionKind::gvk(&group, &version, &kind);
@@ -283,12 +291,7 @@ async fn lua_kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Resu
     let object = api.get_opt(&name).await.map_err(mlua::Error::external)?;
 
     // Serialize object into Lua value
-    lua.to_value_with(
-        &object,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
+    lua_to_value(lua, &object)
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
@@ -328,7 +331,7 @@ async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Res
         plural,
         namespace,
         list_params,
-    } = lua.from_value(argument)?;
+    } = lua_from_value(lua, argument)?;
     let list_params = list_params
         .map(
             |KubeListArgumentListParams {
@@ -373,10 +376,5 @@ async fn lua_kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Res
         .map_err(mlua::Error::external)?;
 
     // Serialize object list into Lua value
-    lua.to_value_with(
-        &object_list,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
+    lua_to_value(lua, &object_list)
 }
