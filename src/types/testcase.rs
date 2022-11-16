@@ -9,7 +9,7 @@ use kube::core::{admission::AdmissionRequest, DynamicObject, ObjectList};
 use serde::{de::DeserializeOwned, Deserialize};
 
 use crate::{
-    handler::lua::{KubeGetArgument, KubeListArgument},
+    handler::lua::helper::{KubeGetArgument, KubeListArgument},
     types::rule::{MutatingRule, ValidatingRule},
 };
 
