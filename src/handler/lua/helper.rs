@@ -6,7 +6,7 @@ use kube::{
     discovery::ApiResource,
     Api,
 };
-use mlua::{Lua, Value};
+use mlua::{Lua, MultiValue, Value};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
@@ -32,6 +32,7 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
     register_lua_function!("jsonPatchDiff", jsonpatch_diff);
     register_lua_function!("startsWith", starts_with);
     register_lua_function!("endsWith", ends_with);
+    register_lua_function!("lookup", lookup);
     register_lua_function!("kubeGet", kube_get, async);
     register_lua_function!("kubeList", kube_list, async);
 
@@ -74,6 +75,20 @@ fn starts_with(_lua: &Lua, (s1, s2): (String, String)) -> mlua::Result<bool> {
 // Lua helper function to check first string ends with second string
 fn ends_with(_lua: &Lua, (s1, s2): (String, String)) -> mlua::Result<bool> {
     Ok(s1.ends_with(&s2))
+}
+
+fn lookup<'lua>(
+    _lua: &'lua Lua,
+    (mut v, keys): (Option<Value<'lua>>, MultiValue<'lua>),
+) -> mlua::Result<Option<Value<'lua>>> {
+    for key in keys {
+        if let Some(Value::Table(t)) = v {
+            v = t.get(key)?;
+        } else {
+            return Ok(None);
+        }
+    }
+    Ok(v)
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
@@ -206,4 +221,68 @@ async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<
 
     // Serialize object list into Lua value
     lua_to_value(lua, &object_list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_lua() -> Lua {
+        let lua = Lua::new();
+        lua.sandbox(true).unwrap();
+        register_lua_helper_functions(&lua).unwrap();
+        lua
+    }
+
+    #[tokio::test]
+    async fn test_lookup() {
+        let lua = setup_lua();
+        let s: String = lua
+            .load(
+                r#"
+object = {foo={bar={{baz="some string"}}}}
+return lookup(object, "foo", "bar", 1, "baz")
+"#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(s, "some string");
+
+        let s: Option<String> = lua
+            .load(
+                r#"
+object = {bar="baz"}
+return lookup(object, "foo", "bar", 1, "baz")
+"#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(s, None);
+
+        let s: Option<String> = lua
+            .load(
+                r#"
+object = {foo={bar="baz"}}
+return lookup(object, "foo", "bar", 1, "baz")
+"#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(s, None);
+
+        let s: Option<String> = lua
+            .load(
+                r#"
+object = "foobar"
+return lookup(object, "foo", "bar", 1, "baz")
+"#,
+            )
+            .eval_async()
+            .await
+            .unwrap();
+        assert_eq!(s, None);
+    }
 }
