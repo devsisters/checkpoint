@@ -14,7 +14,7 @@ use tracing::Instrument;
 
 use checkpoint::{
     handler::{
-        lua::{register_lua_helper_functions, KubeGetArgument, KubeListArgument},
+        lua::helper::{register_lua_helper_functions, KubeGetArgument, KubeListArgument},
         mutate, validate,
     },
     types::{
