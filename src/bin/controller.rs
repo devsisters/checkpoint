@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
             )
             .for_each(|res| async move {
                 match res {
-                    Ok(object) => tracing::info!(?object, "reconciled"),
+                    Ok((object, _)) => tracing::info!(name = object.name, "reconciled"),
                     Err(error) => tracing::error!(%error, "reconcile failed"),
                 }
             }),
