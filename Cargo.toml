@@ -29,6 +29,7 @@ secrecy = "0.8.0"
 serde = { version = "1.0.148", features = ["derive"] }
 serde_json = "1.0.89"
 serde_yaml = "0.9.14"
+stopper = "0.2.0"
 thiserror = "1.0.37"
 tokio = { version = "1.22.0", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.3.4", features = ["trace"] }
