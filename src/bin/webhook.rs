@@ -1,5 +1,5 @@
-use std::io;
 use std::path::Path;
+use std::{io, net::SocketAddr};
 
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
@@ -92,7 +92,9 @@ async fn main() -> Result<()> {
 
     // Spawn HTTP server
     tracing::info!("starting web server...");
-    axum_server::bind_rustls(config.listen_addr.parse()?, tls_config)
+    let listen_addr: SocketAddr = config.listen_addr.parse()?;
+    tracing::info!("listening at {}...", listen_addr);
+    axum_server::bind_rustls(listen_addr, tls_config)
         .handle(axum_server_handle)
         .serve(http_app.into_make_service())
         .await?;
