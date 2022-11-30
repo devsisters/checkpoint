@@ -47,7 +47,7 @@ async fn reload_config(config: &WebhookConfig, tls_config: &RustlsConfig) -> Res
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let config: WebhookConfig = envy::prefixed("CONF_").from_env()?;
+    let config = WebhookConfig::try_from_env()?;
     let kube_config = kube::Config::infer().await?;
     let client: kube::Client = kube_config.try_into()?;
 

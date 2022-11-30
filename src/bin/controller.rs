@@ -43,7 +43,7 @@ async fn shutdown_signal(shutdown_signal_broadcast_tx: Sender<()>) {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let config: ControllerConfig = envy::prefixed("CONF_").from_env()?;
+    let config = ControllerConfig::try_from_env()?;
     let kube_config = kube::Config::infer().await?;
     let default_namespace = kube_config.default_namespace.clone();
     let client: kube::Client = kube_config.try_into()?;
