@@ -125,20 +125,6 @@ async fn run_test_case(test_case_path: &Path) -> Result<()> {
     Ok(())
 }
 
-// TODO: Remove when https://github.com/kube-rs/kube/pull/1048 is merged and released
-fn eq_option_dynamic_object(left: &Option<DynamicObject>, right: &Option<DynamicObject>) -> bool {
-    match (left, right) {
-        (None, None) => true,
-        (Some(_), None) => false,
-        (None, Some(_)) => false,
-        (Some(left), Some(right)) => {
-            left.types.eq(&right.types)
-                && left.metadata.eq(&right.metadata)
-                && left.data.eq(&right.data)
-        }
-    }
-}
-
 async fn run_case(
     case: Case,
     test_case_base_path: &Path,
@@ -254,7 +240,7 @@ async fn run_case(
             actual.message
         ));
     }
-    if !eq_option_dynamic_object(&expected.final_object, &actual.final_object) {
+    if expected.final_object != actual.final_object {
         return Err(anyhow!(
             "test failed. `finalObject` expected: {}, actual: {}",
             serde_json::to_string(&expected.final_object)
