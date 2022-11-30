@@ -19,6 +19,12 @@ pub struct ControllerConfig {
     pub ca_bundle: String,
 }
 
+impl ControllerConfig {
+    pub fn try_from_env() -> Result<Self, envy::Error> {
+        envy::prefixed("CONF_").from_env()
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct WebhookConfig {
     /// Certificate path for HTTPS
@@ -28,4 +34,10 @@ pub struct WebhookConfig {
 
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
+}
+
+impl WebhookConfig {
+    pub fn try_from_env() -> Result<Self, envy::Error> {
+        envy::prefixed("CONF_").from_env()
+    }
 }
