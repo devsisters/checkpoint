@@ -95,7 +95,7 @@ serviceAccount:
   # Annotations to add to the service account
   annotations: {}
 image:
-  repository: ""
+  repository: ghcr.io/devsisters/checkpoint
   pullPolicy: ""
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
