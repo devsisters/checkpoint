@@ -62,7 +62,7 @@ pub struct RuleSpec {
 
     /// The name of ServiceAccount to use to run Lua code.
     ///
-    /// If you want to use `kube_get` or `kube_list` function in Lua code, you must provide ServiceAccount info with this field.
+    /// If you want to use `kubeGet` or `kubeList` function in Lua code, you must provide ServiceAccount info with this field.
     pub service_account: Option<ServiceAccountInfo>,
 
     /// Lua code to evaluate when validating request.

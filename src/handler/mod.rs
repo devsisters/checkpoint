@@ -30,7 +30,7 @@ pub enum Error {
     RuleNotFound,
     #[error("Lua app data not found. This is a bug.")]
     LuaAppDataNotFound,
-    #[error("serviceAccount field is not provided. You should provide serviceAccount field in Rule spec if you want to use `kube_get` or `kube_list` function in Lua code.")]
+    #[error("serviceAccount field is not provided. You should provide serviceAccount field in Rule spec if you want to use `kubeGet` or `kubeList` function in Lua code.")]
     ServiceAccountInfoNotProvided,
     #[error("provided ServiceAccount is not found")]
     ServiceAccountNotFound,
