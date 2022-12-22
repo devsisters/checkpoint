@@ -128,12 +128,7 @@ async fn prepare_kube_client(
         })?;
     let token = tr.status.ok_or(Error::RequestServiceAccountToken)?.token;
 
-    // Create config from env
-    // TODO: Use incluster_env when https://github.com/kube-rs/kube/issues/153 is resolved
-    let mut kube_config =
-        kube::Config::incluster_dns().map_err(Error::KubernetesInClusterConfig)?;
-    // let mut kube_config =
-    //     kube::Config::incluster_env().map_err(Error::KubernetesInClusterConfig)?;
+    let mut kube_config = kube::Config::incluster().map_err(Error::KubernetesInClusterConfig)?;
 
     // Set auth info with token
     kube_config.auth_info = AuthInfo {
