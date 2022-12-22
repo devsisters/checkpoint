@@ -8,6 +8,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use itertools::Itertools;
+use json_patch::PatchOperation;
 use kube::core::{admission::AdmissionRequest, DynamicObject, ObjectList};
 use mlua::{Lua, LuaSerdeExt};
 use tracing::Instrument;
@@ -266,7 +267,7 @@ async fn run_mutating_rule(
         .context("failed to mutate")?;
     let patch = response
         .patch
-        .map(|patch| serde_json::from_slice(&patch))
+        .map(|patch| serde_json::from_slice::<Vec<PatchOperation>>(&patch))
         .transpose()
         .context("failed to deserialize patch")?;
 
