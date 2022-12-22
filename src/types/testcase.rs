@@ -73,7 +73,7 @@ where
             Self::Object(o) => Ok(o),
             Self::FilePath(path) => {
                 let path = join_or_absolute(base_path, &path);
-                let file = fs::File::open(&path).context("failed to open file")?;
+                let file = fs::File::open(path).context("failed to open file")?;
                 serde_yaml::from_reader(file).context("failed to deserialize file")
             }
         }

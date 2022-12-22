@@ -126,9 +126,9 @@ async fn kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<V
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
-        Api::<Object<JsonValue, JsonValue>>::namespaced_with(client, &namespace, &ar)
+        Api::<Object<Option<JsonValue>, JsonValue>>::namespaced_with(client, &namespace, &ar)
     } else {
-        Api::<Object<JsonValue, JsonValue>>::all_with(client, &ar)
+        Api::<Object<Option<JsonValue>, JsonValue>>::all_with(client, &ar)
     };
 
     // Get object
@@ -208,9 +208,9 @@ async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
-        Api::<Object<JsonValue, JsonValue>>::namespaced_with(client, &namespace, &ar)
+        Api::<Object<Option<JsonValue>, JsonValue>>::namespaced_with(client, &namespace, &ar)
     } else {
-        Api::<Object<JsonValue, JsonValue>>::all_with(client, &ar)
+        Api::<Object<Option<JsonValue>, JsonValue>>::all_with(client, &ar)
     };
 
     // List objects
