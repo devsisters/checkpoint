@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use k8s_openapi::{
     api::admissionregistration::v1::{
@@ -14,8 +13,8 @@ use kube::{
     Api, Resource,
 };
 use thiserror::Error;
-use tokio::sync::RwLock;
 
+use super::ReconcilerContext;
 use crate::{
     config::ControllerConfig,
     types::rule::{MutatingRule, ValidatingRule},
@@ -24,12 +23,6 @@ use crate::{
 pub const VALIDATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/validatingrule";
 pub const MUTATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/mutatingrule";
 pub const SHOULD_UPDATE_ANNOTATION_KEY: &str = "checkpoint.devsisters.com/should-update";
-
-pub struct ReconcilerContext {
-    pub client: kube::Client,
-    pub config: ControllerConfig,
-    pub ca_bundle: Arc<RwLock<ByteString>>,
-}
 
 /// Errors can be raised within reconciler
 #[derive(Debug, Error)]
@@ -235,10 +228,4 @@ pub async fn reconcile_mutatingrule(
         .map_err(Error::MutatingWebhookConfigurationCreationFailed)?;
 
     Ok(Action::await_change())
-}
-
-/// When error occurred, log it and requeue after three seconds
-pub fn error_policy<T>(_rule: Arc<T>, error: &Error, _ctx: Arc<ReconcilerContext>) -> Action {
-    tracing::error!(%error);
-    Action::requeue(Duration::from_secs(3))
 }
