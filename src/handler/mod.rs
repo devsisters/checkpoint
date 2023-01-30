@@ -42,10 +42,8 @@ pub enum Error {
     KubernetesInClusterConfig(#[source] kube::config::InClusterError),
     #[error("Kubernetes Kubeconfig error: {0}")]
     KubernetesKubeconfig(#[source] kube::config::KubeconfigError),
-    #[error("failed to set Lua sandbox mode: {0}")]
-    SetLuaSandbox(#[source] mlua::Error),
-    #[error("failed to register Lua helper functions: {0}")]
-    RegisterHelperFunction(#[source] mlua::Error),
+    #[error("failed to prepare Lua context: {0}")]
+    PrepareLuaContext(#[source] mlua::Error),
     #[error("failed to convert admission request to Lua value: {0}")]
     ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to create Tokio runtime: {0}")]

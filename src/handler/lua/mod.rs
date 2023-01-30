@@ -8,34 +8,11 @@ use kube::{
     core::{admission::AdmissionRequest, DynamicObject},
     Api, Client,
 };
-use mlua::{Lua, LuaSerdeExt, Value};
-use serde::{Deserialize, Serialize};
+use mlua::Lua;
 
-use crate::{handler::Error, types::rule::ServiceAccountInfo};
+use crate::{lua::lua_to_value, types::rule::ServiceAccountInfo};
 
-fn lua_to_value<'lua, T>(lua: &'lua Lua, value: &T) -> mlua::Result<Value<'lua>>
-where
-    T: Serialize + ?Sized,
-{
-    lua.to_value_with(
-        value,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
-}
-
-fn lua_from_value<'lua, T>(lua: &'lua Lua, value: Value<'lua>) -> mlua::Result<T>
-where
-    T: Deserialize<'lua>,
-{
-    lua.from_value_with(
-        value,
-        mlua::DeserializeOptions::new()
-            .deny_unsupported_types(false)
-            .deny_recursive_tables(false),
-    )
-}
+use super::Error;
 
 struct LuaContextAppData {
     kube_client: Option<Client>,
@@ -146,6 +123,8 @@ pub(super) async fn prepare_lua_ctx(
     serviceaccount_info: &Option<ServiceAccountInfo>,
     timeout_seconds: Option<i32>,
 ) -> Result<Lua, Error> {
+    let lua = crate::lua::prepare_lua_ctx().map_err(Error::PrepareLuaContext)?;
+
     // Prepare app data
     // Create Kubernetes client which is restricted with provided ServiceAccount
     let restricted_client = if let Some(serviceaccount_info) = serviceaccount_info {
@@ -157,13 +136,9 @@ pub(super) async fn prepare_lua_ctx(
         kube_client: restricted_client,
     };
 
-    let lua = Lua::new();
     lua.set_app_data(app_data);
 
-    // Enable sandbox mode
-    lua.sandbox(true).map_err(Error::SetLuaSandbox)?;
-
-    helper::register_lua_helper_functions(&lua).map_err(Error::RegisterHelperFunction)?;
+    helper::register_lua_helper_functions(&lua).map_err(Error::PrepareLuaContext)?;
 
     Ok(lua)
 }
