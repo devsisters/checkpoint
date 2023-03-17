@@ -2,13 +2,12 @@
 
 use kube::{
     api::ListParams,
-    core::{GroupVersionKind, Object},
+    core::{DynamicObject, GroupVersionKind},
     discovery::ApiResource,
     Api,
 };
 use mlua::{Lua, MultiValue, Value};
 use serde::Deserialize;
-use serde_json::Value as JsonValue;
 
 use super::{extract_kube_client_from_lua_ctx, lua_from_value, lua_to_value};
 
@@ -126,9 +125,9 @@ async fn kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<V
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
-        Api::<Object<Option<JsonValue>, JsonValue>>::namespaced_with(client, &namespace, &ar)
+        Api::<DynamicObject>::namespaced_with(client, &namespace, &ar)
     } else {
-        Api::<Object<Option<JsonValue>, JsonValue>>::all_with(client, &ar)
+        Api::<DynamicObject>::all_with(client, &ar)
     };
 
     // Get object
@@ -208,9 +207,9 @@ async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
-        Api::<Object<Option<JsonValue>, JsonValue>>::namespaced_with(client, &namespace, &ar)
+        Api::<DynamicObject>::namespaced_with(client, &namespace, &ar)
     } else {
-        Api::<Object<Option<JsonValue>, JsonValue>>::all_with(client, &ar)
+        Api::<DynamicObject>::all_with(client, &ar)
     };
 
     // List objects
