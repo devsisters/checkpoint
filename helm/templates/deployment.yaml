@@ -43,11 +43,16 @@ spec:
           value: {{ include "checkpoint.fullname" . }}-webhook
         - name: CONF_SERVICE_PORT
           value: "{{ .Values.controller.service.port }}"
-        - name: CONF_CA_BUNDLE
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "checkpoint.fullname" . }}-cert
-              key: ca.crt
+        - name: CONF_CA_BUNDLE_PATH
+          value: /tmp/cert/ca.crt
+        volumeMounts:
+        - name: certs
+          mountPath: /tmp/cert
+          readOnly: true
+      volumes:
+      - name: certs
+        secret:
+          secretName: {{ include "checkpoint.fullname" . }}-cert
       {{- with .Values.controller.nodeSelector | default .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

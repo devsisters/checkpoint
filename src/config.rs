@@ -15,8 +15,8 @@ pub struct ControllerConfig {
     /// Installed Kubernetes Service port of the checkpoint webhook
     pub service_port: i32,
 
-    /// Base64 encoded PEM CA bundle for the checkpoint webhook
-    pub ca_bundle: String,
+    /// Base64 encoded PEM CA bundle file path for the checkpoint webhook
+    pub ca_bundle_path: PathBuf,
 }
 
 impl ControllerConfig {

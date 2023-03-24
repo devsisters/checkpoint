@@ -1,11 +1,8 @@
-use std::path::Path;
 use std::{io, net::SocketAddr};
 
 use anyhow::Result;
 use axum_server::tls_rustls::RustlsConfig;
-use notify::{RecursiveMode, Watcher};
 use stopper::Stopper;
-use tokio::sync::mpsc;
 
 use checkpoint::config::WebhookConfig;
 
@@ -39,29 +36,10 @@ async fn shutdown_signal(axum_server_handle: axum_server::Handle, stopper: Stopp
     stopper.stop();
 }
 
-async fn reload_config(config: &WebhookConfig, tls_config: &RustlsConfig) -> Result<(), io::Error> {
+async fn reload_config(config: WebhookConfig, tls_config: RustlsConfig) -> Result<(), io::Error> {
     tls_config
         .reload_from_pem_file(&config.cert_path, &config.key_path)
         .await
-}
-
-async fn reload_config_loop(
-    mut receiver: mpsc::Receiver<()>,
-    stopper: Stopper,
-    config: WebhookConfig,
-    tls_config: RustlsConfig,
-) {
-    while let Some(Some(())) = stopper.stop_future(receiver.recv()).await {
-        let res = reload_config(&config, &tls_config).await;
-        match res {
-            Ok(_) => {
-                tracing::info!("TLS certificate reloaded");
-            }
-            Err(error) => {
-                tracing::error!(%error, "Failed to reload cert");
-            }
-        }
-    }
 }
 
 #[tokio::main]
@@ -81,28 +59,33 @@ async fn main() -> Result<()> {
     let stopper = Stopper::new();
 
     // Prepare TLS cert reloader
-    let (watcher_sender, watcher_receiver) = mpsc::channel::<()>(10);
-    tokio::spawn(reload_config_loop(
-        watcher_receiver,
-        stopper.clone(),
-        config.clone(),
-        tls_config.clone(),
-    ));
-    let mut watcher = notify::recommended_watcher(move |res| {
-        tracing::info!("Reloading TLS certificate");
-        match res {
-            Ok(_) => {
-                if watcher_sender.blocking_send(()).is_err() {
-                    tracing::error!("Failed to send cert reload message");
+    let mut watcher = checkpoint::filewatcher::FileWatcher::new(
+        {
+            let config = config.clone();
+            let tls_config = tls_config.clone();
+            move |_| {
+                let config = config.clone();
+                let tls_config = tls_config.clone();
+                async move {
+                    tracing::info!("Reloading TLS certificate");
+                    let res = reload_config(config, tls_config).await;
+                    match res {
+                        Ok(_) => {
+                            tracing::info!("TLS certificate reloaded");
+                        }
+                        Err(error) => {
+                            tracing::error!(%error, "Failed to reload cert");
+                        }
+                    }
                 }
             }
-            Err(error) => {
-                tracing::error!(%error, "Failed to watch cert");
-            }
-        }
-    })?;
-    watcher.watch(Path::new(&config.cert_path), RecursiveMode::NonRecursive)?;
-    watcher.watch(Path::new(&config.key_path), RecursiveMode::NonRecursive)?;
+        },
+        10,
+        stopper.clone(),
+    );
+    watcher.watch(config.cert_path.clone());
+    watcher.watch(config.key_path.clone());
+    watcher.spawn()?;
 
     // Prepare shutdown signal futures
     let axum_server_handle = axum_server::Handle::new();
