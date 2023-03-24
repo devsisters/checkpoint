@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use futures_util::stream::StreamExt;
-use k8s_openapi::api::admissionregistration::v1::{
-    MutatingWebhookConfiguration, ValidatingWebhookConfiguration,
+use k8s_openapi::{
+    api::admissionregistration::v1::{
+        MutatingWebhookConfiguration, ValidatingWebhookConfiguration,
+    },
+    ByteString,
 };
 use kube::{api::Api, runtime::Controller};
-use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast::Sender, RwLock};
 
 use checkpoint::config::ControllerConfig;
 
@@ -82,6 +85,10 @@ async fn main() -> Result<()> {
 
     tracing::info!("spawning controllers...");
 
+    let ca_bundle = tokio::fs::read_to_string(&config.ca_bundle_path).await?;
+    let ca_bundle = ByteString(ca_bundle.as_bytes().to_vec());
+    let ca_bundle = Arc::new(RwLock::new(ca_bundle));
+
     // Prepare Kubernetes APIs
     let vr_api = Api::<checkpoint::types::rule::ValidatingRule>::all(client.clone());
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
@@ -101,6 +108,7 @@ async fn main() -> Result<()> {
                 Arc::new(checkpoint::reconcile::ReconcilerContext {
                     client: client.clone(),
                     config: config.clone(),
+                    ca_bundle: ca_bundle.clone(),
                 }),
             )
             .for_each(|res| async move {
@@ -122,7 +130,11 @@ async fn main() -> Result<()> {
             .run(
                 checkpoint::reconcile::reconcile_mutatingrule,
                 checkpoint::reconcile::error_policy,
-                Arc::new(checkpoint::reconcile::ReconcilerContext { client, config }),
+                Arc::new(checkpoint::reconcile::ReconcilerContext {
+                    client,
+                    config,
+                    ca_bundle,
+                }),
             )
             .for_each(|res| async move {
                 match res {

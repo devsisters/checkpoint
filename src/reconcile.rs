@@ -1,9 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use k8s_openapi::api::admissionregistration::v1::{
-    MutatingWebhook, MutatingWebhookConfiguration, ServiceReference, ValidatingWebhook,
-    ValidatingWebhookConfiguration, WebhookClientConfig,
+use k8s_openapi::{
+    api::admissionregistration::v1::{
+        MutatingWebhook, MutatingWebhookConfiguration, ServiceReference, ValidatingWebhook,
+        ValidatingWebhookConfiguration, WebhookClientConfig,
+    },
+    ByteString,
 };
 use kube::{
     api::{ObjectMeta, Patch, PatchParams},
@@ -11,6 +14,7 @@ use kube::{
     Api, Resource,
 };
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 use crate::{
     config::ControllerConfig,
@@ -23,6 +27,7 @@ const MUTATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/mutatingru
 pub struct ReconcilerContext {
     pub client: kube::Client,
     pub config: ControllerConfig,
+    pub ca_bundle: Arc<RwLock<ByteString>>,
 }
 
 /// Errors can be raised within reconciler
@@ -38,13 +43,12 @@ pub enum Error {
 
 fn webhook_client_config(
     config: &ControllerConfig,
+    ca_bundle: ByteString,
     path: &str,
     rule_name: &str,
 ) -> WebhookClientConfig {
     WebhookClientConfig {
-        ca_bundle: Some(k8s_openapi::ByteString(
-            config.ca_bundle.as_bytes().to_vec(),
-        )),
+        ca_bundle: Some(ca_bundle),
         service: Some(ServiceReference {
             namespace: config.service_namespace.clone(),
             name: config.service_name.clone(),
@@ -66,9 +70,13 @@ macro_rules! webhook_configuration {
         $name:expr,
         $oref:expr,
         $spec:expr,
-        $config:expr
+        $config:expr,
+        $ca_bundle_lock:expr
     ) => {
         {
+            // Read CA bundle from RwLock
+            let ca_bundle = $ca_bundle_lock.read().await.clone();
+
             let mut labels = ::std::collections::BTreeMap::default();
             labels.insert($owned_label_key.to_string(), $name.clone());
 
@@ -86,7 +94,7 @@ macro_rules! webhook_configuration {
                     object_selector: $spec.object_selector,
                     rules: $spec.object_rules,
                     timeout_seconds: $spec.timeout_seconds,
-                    client_config: webhook_client_config(&$config, $path, &$name),
+                    client_config: webhook_client_config(&$config, ca_bundle, $path, &$name),
                     admission_review_versions: vec!["v1".to_string()],
                     side_effects: "None".to_string(),
                     ..Default::default()
@@ -99,7 +107,8 @@ macro_rules! webhook_configuration {
         $name:expr,
         $oref:expr,
         $spec:expr,
-        $config:expr
+        $config:expr,
+        $ca_bundle_lock:expr
     ) => {
         webhook_configuration!(
             @internal
@@ -111,7 +120,8 @@ macro_rules! webhook_configuration {
             $name,
             $oref,
             $spec,
-            $config
+            $config,
+            $ca_bundle_lock
         )
     };
     (
@@ -119,7 +129,8 @@ macro_rules! webhook_configuration {
         $name:expr,
         $oref:expr,
         $spec:expr,
-        $config:expr
+        $config:expr,
+        $ca_bundle_lock:expr
     ) => {
         webhook_configuration!(
             @internal
@@ -131,7 +142,8 @@ macro_rules! webhook_configuration {
             $name,
             $oref,
             $spec,
-            $config
+            $config,
+            $ca_bundle_lock
         )
     };
 }
@@ -158,8 +170,14 @@ pub async fn reconcile_validatingrule(
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
 
     // Popluate ValidatingWebhookConfiguration
-    let vwc: ValidatingWebhookConfiguration =
-        webhook_configuration!(validate, name, oref, validating_rule.spec.0, ctx.config);
+    let vwc: ValidatingWebhookConfiguration = webhook_configuration!(
+        validate,
+        name,
+        oref,
+        validating_rule.spec.0,
+        ctx.config,
+        ctx.ca_bundle
+    );
 
     // Create or update ValidatingWebhookConfiguration
     vwc_api
@@ -196,8 +214,14 @@ pub async fn reconcile_mutatingrule(
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
 
     // Popluate MutatingWebhookConfiguration
-    let mwc: MutatingWebhookConfiguration =
-        webhook_configuration!(mutate, name, oref, mutating_rule.spec.0, ctx.config);
+    let mwc: MutatingWebhookConfiguration = webhook_configuration!(
+        mutate,
+        name,
+        oref,
+        mutating_rule.spec.0,
+        ctx.config,
+        ctx.ca_bundle
+    );
 
     // Create or update MutatingWebhookConfiguration
     mwc_api
