@@ -21,8 +21,9 @@ use crate::{
     types::rule::{MutatingRule, ValidatingRule},
 };
 
-const VALIDATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/validatingrule";
-const MUTATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/mutatingrule";
+pub const VALIDATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/validatingrule";
+pub const MUTATINGRULE_OWNED_LABEL_KEY: &str = "checkpoint.devsisters.com/mutatingrule";
+pub const SHOULD_UPDATE_ANNOTATION_KEY: &str = "checkpoint.devsisters.com/should-update";
 
 pub struct ReconcilerContext {
     pub client: kube::Client,
