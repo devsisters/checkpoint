@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 use kube::CustomResource;
 use schemars::JsonSchema;
@@ -62,13 +62,55 @@ impl fmt::Display for RestartPolicy {
     }
 }
 
-/// Configuration of a webhook to notify when policy check failed.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, Default)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum CronPolicyNotificationWebhookMethod {
+    Get,
+    Head,
+    #[default]
+    Post,
+    Put,
+    Delete,
+    Connect,
+    Options,
+    Trace,
+    Patch,
+}
+
+/// Configuration of a custom webhook to notify when policy check failed.
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
-pub struct Webhook {
+pub struct CronPolicyNotificationWebhook {
     /// Url of the webhook
     pub url: Url,
+    /// HTTP method to use when requesting webhook (default: POST)
+    #[serde(default)]
+    pub method: CronPolicyNotificationWebhookMethod,
+    /// Additional HTTP headers to append when requesting webhook
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
     /// Body template of the webhook
-    pub template: String,
+    pub body: String,
+}
+
+/// Configuration of a Slack webhook to notify when policy check failed.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CronPolicyNotificationSlack {
+    /// Slack incoming webhook URL to notify
+    pub webhook_url: Url,
+    /// Slack channel ID to notify
+    pub channel_id: String,
+    /// Slack message template
+    pub message: String,
+}
+
+/// Configurations of notifications to notify when policy chech failed
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+pub struct CronPolicyNotification {
+    #[serde(default)]
+    pub slack: Option<CronPolicyNotificationSlack>,
+    #[serde(default)]
+    pub webhook: Option<CronPolicyNotificationWebhook>,
 }
 
 /// CronPolicies check the specified resources with the provided Lua code periodically.
@@ -92,8 +134,8 @@ pub struct CronPolicySpec {
     pub resources: Vec<CronPolicyResource>,
     /// Lua code to evaluate on the resources.
     pub code: String,
-    /// Configuration of a webhook to notify when policy check failed.
-    pub webhook: Webhook,
+    /// Configurations of notifications to notify when policy check failed.
+    pub notifications: CronPolicyNotification,
 
     /// Namespace name for the CronJob.  Defaults to "default".
     #[serde(default = "default_cronpolicyspec_namespace")]
