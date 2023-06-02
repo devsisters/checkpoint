@@ -19,6 +19,7 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
     }
 
     // Register all Lua helper functions
+    register_lua_function!("toJsonString", to_json_string);
     register_lua_function!("debugPrint", debug_print);
     register_lua_function!("deepCopy", deepcopy);
     register_lua_function!("jsonPatchDiff", jsonpatch_diff);
@@ -27,6 +28,13 @@ pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
     register_lua_function!("lookup", lookup);
 
     Ok(())
+}
+
+/// Lua helper function to convert table to JSON string
+fn to_json_string<'lua>(lua: &'lua Lua, v: Value<'lua>) -> mlua::Result<String> {
+    let v_json: serde_json::Value = lua_from_value(lua, v)?;
+    let v_json_string = serde_json::to_string(&v_json).map_err(mlua::Error::external)?;
+    Ok(v_json_string)
 }
 
 /// Lua helper function to debug-print Lua value with JSON format
