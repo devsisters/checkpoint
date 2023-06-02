@@ -21,4 +21,4 @@ RUN cargo build --release
 
 FROM docker.io/debian:stable-slim AS runtime
 
-COPY --from=builder /app/target/release/checkpoint /app/target/release/checkpoint-controller /app/target/release/checkpoint-webhook /usr/local/bin/
+COPY --from=builder /app/target/release/checkpoint /app/target/release/checkpoint-controller /app/target/release/checkpoint-webhook /app/target/release/checkpoint-checker /usr/local/bin/
