@@ -42,6 +42,8 @@ pub enum Error {
     PatchCronJob(#[source] kube::Error),
     #[error("Failed to serialize resources (This is a bug): {0}")]
     SerializeResources(#[source] serde_json::Error),
+    #[error("Failed to serialize notifications (This is a bug): {0}")]
+    SerializeNotifications(#[source] serde_json::Error),
 }
 
 /// Set a label that indicates the object is owned by a CronPolicy
@@ -98,13 +100,11 @@ fn make_cronjob(
                                         value_from: None,
                                     },
                                     EnvVar {
-                                        name: "CONF_WEBHOOK_URL".to_string(),
-                                        value: Some(spec.webhook.url.to_string()),
-                                        value_from: None,
-                                    },
-                                    EnvVar {
-                                        name: "CONF_WEBHOOK_TEMPLATE".to_string(),
-                                        value: Some(spec.webhook.template.clone()),
+                                        name: "CONF_NOTIFICATIONS".to_string(),
+                                        value: Some(
+                                            serde_json::to_string(&spec.notifications)
+                                                .map_err(Error::SerializeNotifications)?,
+                                        ),
                                         value_from: None,
                                     },
                                 ]),

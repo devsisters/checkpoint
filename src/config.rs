@@ -4,9 +4,8 @@ use serde::{
     de::{self, DeserializeOwned},
     Deserialize, Deserializer,
 };
-use url::Url;
 
-use crate::types::policy::CronPolicyResource;
+use crate::types::policy::{CronPolicyNotification, CronPolicyResource};
 
 fn default_listen_addr() -> String {
     "0.0.0.0:3000".to_string()
@@ -67,10 +66,9 @@ pub struct CheckerConfig {
     pub resources: Vec<CronPolicyResource>,
     /// Lua code to evaluate on the resources.
     pub code: String,
-    /// Webhook URL to notify when policy check failed.
-    pub webhook_url: Url,
-    /// Webhook body template.
-    pub webhook_template: String,
+    /// Notification configurations
+    #[serde(deserialize_with = "deserialize_json_string")]
+    pub notifications: CronPolicyNotification,
 }
 
 impl CheckerConfig {
