@@ -92,8 +92,10 @@ pub struct KubeListArgument {
     pub list_params: Option<KubeListArgumentListParams>,
 }
 
-fn default_kube_list_argument_list_params_bookmarks() -> bool {
-    true
+#[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+pub enum KubeListArgumentListParamsVersionMatch {
+    NotOlderThan,
+    Exact,
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
@@ -102,10 +104,10 @@ pub struct KubeListArgumentListParams {
     pub label_selector: Option<String>,
     pub field_selector: Option<String>,
     pub timeout: Option<u32>,
-    #[serde(default = "default_kube_list_argument_list_params_bookmarks")]
-    pub bookmarks: bool,
     pub limit: Option<u32>,
     pub continue_token: Option<String>,
+    pub version_match: Option<KubeListArgumentListParamsVersionMatch>,
+    pub resource_version: Option<String>,
 }
 
 /// Lua helper function to list Kubernetes resources
@@ -125,16 +127,23 @@ async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<
                  label_selector,
                  field_selector,
                  timeout,
-                 bookmarks,
                  limit,
                  continue_token,
+                 version_match,
+                 resource_version,
              }| ListParams {
                 label_selector,
                 field_selector,
                 timeout,
-                bookmarks,
                 limit,
                 continue_token,
+                version_match: version_match.map(|vm| match vm {
+                    KubeListArgumentListParamsVersionMatch::NotOlderThan => {
+                        kube::api::VersionMatch::NotOlderThan
+                    }
+                    KubeListArgumentListParamsVersionMatch::Exact => kube::api::VersionMatch::Exact,
+                }),
+                resource_version,
             },
         )
         .unwrap_or_default();

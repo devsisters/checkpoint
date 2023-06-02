@@ -15,9 +15,9 @@ futures-util = "0.3.25"
 hostname = "0.3.1"
 http = "0.2.8"
 itertools = "0.10.5"
-json-patch = "0.3.0"
-k8s-openapi = { version = "0.16.0", features = ["v1_21", "schemars"] }
-kube = { version = "0.77.0", default-features = false, features = ["rustls-tls", "client", "derive", "runtime", "admission"] }
+json-patch = "1.0.0"
+k8s-openapi = { version = "0.18.0", features = ["v1_21", "schemars"] }
+kube = { version = "0.82.2", default-features = false, features = ["rustls-tls", "client", "derive", "runtime", "admission"] }
 mlua = { version = "0.8.9", features = ["luau", "serialize", "async", "send"] }
 # default-features is disabled for tokio compatibility.
 # See https://docs.rs/notify/latest/notify/#crossbeam-channel--tokio
