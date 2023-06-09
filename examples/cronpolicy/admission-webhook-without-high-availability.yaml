@@ -97,14 +97,14 @@ spec:
       headers:
         content-type: application/json
       body: |
-        {
+        {{
           "text": "{policy.name} is firing",
-          "blocks": [{
+          "blocks": [{{
             "type": "section",
-            "text": {
+            "text": {{
               "type": "mrkdwn",
-              "text": "`{policy.name}` *is firing*\nFollowing admission webhooks are not high-available:\n```\n{output.names}\n```"
-            }
-          }]
-        }
+              "text": "`{policy.name}` *is firing*\nFollowing admission webhooks are not high-available:\n{output.names}"
+            }}
+          }}]
+        }}
   restartPolicy: Never
