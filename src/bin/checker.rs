@@ -1,7 +1,12 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use checkpoint::{checker::resources_to_lua_values, config::CheckerConfig, lua::prepare_lua_ctx};
+
+use checkpoint::{
+    checker::{notify, resources_to_lua_values},
+    config::CheckerConfig,
+    lua::prepare_lua_ctx,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -29,8 +34,9 @@ async fn main() -> Result<()> {
         .call(resource_values)
         .context("failed to run Lua code")?;
 
-    // TODO:
-    println!("{:#?}", output);
+    if let Some(output) = output {
+        notify(config.policy_name, output, config.notifications).await;
+    }
 
     Ok(())
 }

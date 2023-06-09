@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use futures_util::{stream::FuturesOrdered, TryFutureExt, TryStreamExt};
+use interpolator::Formattable;
 use kube::{
     api::ListParams,
     core::{DynamicObject, GroupVersionKind},
@@ -7,8 +10,15 @@ use kube::{
     Api,
 };
 use mlua::{Lua, Value};
+use tracing::Instrument;
 
-use crate::{lua::lua_to_value, types::policy::CronPolicyResource};
+use crate::{
+    lua::lua_to_value,
+    types::policy::{
+        CronPolicyNotification, CronPolicyNotificationSlack, CronPolicyNotificationWebhook,
+        CronPolicyResource,
+    },
+};
 
 pub async fn resources_to_lua_values<'lua>(
     lua: &'lua Lua,
@@ -61,4 +71,55 @@ pub async fn resources_to_lua_values<'lua>(
         .try_collect()
         .err_into()
         .await
+}
+
+pub async fn notify(
+    policy_name: String,
+    output: HashMap<String, String>,
+    notifications: CronPolicyNotification,
+) {
+    let mut interpolator_context = output
+        .iter()
+        .map(|(key, value)| (format!("output.{}", key), Formattable::display(value)))
+        .collect::<HashMap<_, _>>();
+    interpolator_context.insert(
+        "policy.name".to_string(),
+        Formattable::display(&policy_name),
+    );
+    let interpolator_context = interpolator_context;
+
+    if let Some(slack_notification) = notifications.slack {
+        let slack_span = tracing::info_span!("notify-slack", %policy_name);
+        let res = notify_slack(&interpolator_context, slack_notification)
+            .instrument(slack_span)
+            .await;
+        if let Err(error) = res {
+            tracing::error!(%policy_name, %error, "Failed to notify slack");
+        }
+    }
+    if let Some(webhook_notification) = notifications.webhook {
+        let slack_span = tracing::info_span!("notify-webhook", %policy_name);
+        let res = notify_webhook(&interpolator_context, webhook_notification)
+            .instrument(slack_span)
+            .await;
+        if let Err(error) = res {
+            tracing::error!(%policy_name, %error, "Failed to notify webhook");
+        }
+    }
+}
+
+async fn notify_slack(
+    context: &HashMap<String, Formattable<'_>>,
+    config: CronPolicyNotificationSlack,
+) -> Result<()> {
+    // TODO:
+    Ok(())
+}
+
+async fn notify_webhook(
+    context: &HashMap<String, Formattable<'_>>,
+    config: CronPolicyNotificationWebhook,
+) -> Result<()> {
+    // TODO:
+    Ok(())
 }

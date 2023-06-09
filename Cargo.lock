@@ -236,6 +236,7 @@ dependencies = [
  "futures-util",
  "hostname",
  "http",
+ "interpolator",
  "itertools",
  "json-patch",
  "k8s-openapi",
@@ -884,6 +885,12 @@ checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "interpolator"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71dd52191aae121e8611f1e8dc3e324dd0dd1dee1e6dd91d10ee07a3cfb4d9d8"
 
 [[package]]
 name = "io-lifetimes"
