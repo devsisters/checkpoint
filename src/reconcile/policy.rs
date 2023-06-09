@@ -54,7 +54,7 @@ fn make_labels(name: String) -> BTreeMap<String, String> {
 }
 
 fn make_cronjob(
-    name: String,
+    cp_name: String,
     namespace: String,
     oref: OwnerReference,
     spec: &CronPolicySpec,
@@ -62,10 +62,10 @@ fn make_cronjob(
 ) -> Result<CronJob, Error> {
     Ok(CronJob {
         metadata: ObjectMeta {
-            name: Some(name.clone()),
+            name: Some(cp_name.clone()),
             namespace: Some(namespace),
             owner_references: Some(vec![oref]),
-            labels: Some(make_labels(name.clone())),
+            labels: Some(make_labels(cp_name.clone())),
             ..Default::default()
         },
         spec: Some(CronJobSpec {
@@ -77,13 +77,18 @@ fn make_cronjob(
                     template: PodTemplateSpec {
                         metadata: None,
                         spec: Some(PodSpec {
-                            service_account_name: Some(name),
+                            service_account_name: Some(cp_name.clone()),
                             containers: vec![Container {
                                 command: Some(vec!["checkpoint-checker".to_string()]),
                                 env: Some(vec![
                                     EnvVar {
                                         name: "RUST_LOG".to_string(),
                                         value: Some("info".to_string()),
+                                        value_from: None,
+                                    },
+                                    EnvVar {
+                                        name: "CONF_POLICY_NAME".to_string(),
+                                        value: Some(cp_name),
                                         value_from: None,
                                     },
                                     EnvVar {

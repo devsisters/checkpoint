@@ -61,6 +61,8 @@ where
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct CheckerConfig {
+    /// Name of the policy
+    pub policy_name: String,
     /// Specifier for the resources to check in JSON string,
     #[serde(deserialize_with = "deserialize_json_string")]
     pub resources: Vec<CronPolicyResource>,
