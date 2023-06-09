@@ -463,9 +463,9 @@ async fn check_cronpolicy(cronpolicy: CronPolicy) -> Result<()> {
 
     if let Some(output) = output {
         tracing::error!(output = ?output, "Lua code exited with output");
+        Err(anyhow!("Lua code exited with output: {:?}", output))
     } else {
         tracing::info!("Lua code exited with no output");
+        Ok(())
     }
-
-    Ok(())
 }
