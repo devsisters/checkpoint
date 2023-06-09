@@ -408,12 +408,9 @@ spec:
                 description: Configurations of notifications to notify when policy check failed.
                 properties:
                   slack:
-                    description: Configuration of a Slack webhook to notify when policy check failed.
+                    description: Configuration of a Slack webhook
                     nullable: true
                     properties:
-                      channelId:
-                        description: Slack channel ID to notify
-                        type: string
                       message:
                         description: Slack message template
                         type: string
@@ -422,12 +419,11 @@ spec:
                         format: uri
                         type: string
                     required:
-                    - channelId
                     - message
                     - webhookUrl
                     type: object
                   webhook:
-                    description: Configuration of a custom webhook to notify when policy check failed.
+                    description: Configuration of a custom webhook
                     nullable: true
                     properties:
                       body:
