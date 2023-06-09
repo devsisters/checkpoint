@@ -80,7 +80,7 @@ spec:
     if #vulnerables > 0 then
       names = ""
       for _, webhookConfigurations in vulnerables do
-        names ..= webhookConfigurations["metadata"]["name"] .. "\n"
+        names ..= "- `" .. webhookConfigurations["metadata"]["name"] .. "`\n"
       end
       return {names=names}
     end
