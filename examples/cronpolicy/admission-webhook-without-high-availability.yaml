@@ -92,4 +92,20 @@ spec:
         `{policy.name}` *is firing*
         Following admission webhooks are not high-available:
         {output.names}
+    webhook:
+      url: "https://example.com"
+      method: POST
+      headers:
+        content-type: application/json
+      body: |
+        {
+          "text": "{policy.name} is firing",
+          "blocks": [{
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "`{policy.name}` *is firing*\nFollowing admission webhooks are not high-available:\n```\n{output.names}\n```"
+            }
+          }]
+        }
   restartPolicy: Never
