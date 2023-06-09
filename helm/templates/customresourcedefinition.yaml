@@ -412,7 +412,7 @@ spec:
                     nullable: true
                     properties:
                       message:
-                        description: Slack message template
+                        description: Slack message template. Curly braces must be repeated (`{{` or `}}`) to distinguished from template variables
                         type: string
                       webhookUrl:
                         description: Slack incoming webhook URL to notify
@@ -427,7 +427,7 @@ spec:
                     nullable: true
                     properties:
                       body:
-                        description: Body template of the webhook
+                        description: Body template of the webhook. Curly braces must be repeated (`{{` or `}}`) to distinguished from template variables
                         type: string
                       headers:
                         additionalProperties:

@@ -88,7 +88,8 @@ pub struct CronPolicyNotificationWebhook {
     /// Additional HTTP headers to append when requesting webhook
     #[serde(default)]
     pub headers: HashMap<String, String>,
-    /// Body template of the webhook
+    /// Body template of the webhook.
+    /// Curly braces must be repeated (`{{` or `}}`) to distinguished from template variables
     pub body: String,
 }
 
@@ -98,7 +99,8 @@ pub struct CronPolicyNotificationWebhook {
 pub struct CronPolicyNotificationSlack {
     /// Slack incoming webhook URL to notify
     pub webhook_url: Url,
-    /// Slack message template
+    /// Slack message template.
+    /// Curly braces must be repeated (`{{` or `}}`) to distinguished from template variables
     pub message: String,
 }
 
