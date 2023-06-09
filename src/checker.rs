@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use futures_util::{stream::FuturesOrdered, TryFutureExt, TryStreamExt};
+use http::{header::HeaderName, HeaderMap, HeaderValue, Method};
 use interpolator::Formattable;
 use kube::{
     api::ListParams,
@@ -10,13 +11,15 @@ use kube::{
     Api,
 };
 use mlua::{Lua, Value};
+use serde::Serialize;
+use slack_blocks::{blocks::Section, text::ToSlackMarkdown, Block};
 use tracing::Instrument;
 
 use crate::{
     lua::lua_to_value,
     types::policy::{
         CronPolicyNotification, CronPolicyNotificationSlack, CronPolicyNotificationWebhook,
-        CronPolicyResource,
+        CronPolicyNotificationWebhookMethod, CronPolicyResource,
     },
 };
 
@@ -90,7 +93,7 @@ pub async fn notify(
 
     if let Some(slack_notification) = notifications.slack {
         let slack_span = tracing::info_span!("notify-slack", %policy_name);
-        let res = notify_slack(&interpolator_context, slack_notification)
+        let res = notify_slack(&policy_name, &interpolator_context, slack_notification)
             .instrument(slack_span)
             .await;
         if let Err(error) = res {
@@ -108,11 +111,33 @@ pub async fn notify(
     }
 }
 
+#[derive(Serialize)]
+struct SlackReq<'a> {
+    text: String,
+    blocks: Vec<Block<'a>>,
+}
+
 async fn notify_slack(
+    policy_name: &str,
     context: &HashMap<String, Formattable<'_>>,
     config: CronPolicyNotificationSlack,
 ) -> Result<()> {
-    // TODO:
+    let message = interpolator::format(&config.message, context)
+        .context("failed to make Slack message from template")?;
+    let blocks = vec![Section::builder().text(message.markdown()).build().into()];
+    let body = SlackReq {
+        text: format!("{} is firing", policy_name),
+        blocks,
+    };
+
+    let client = reqwest::Client::new();
+    client
+        .post(config.webhook_url)
+        .json(&body)
+        .send()
+        .await
+        .context("failed to request to Slack webhook")?;
+
     Ok(())
 }
 
@@ -120,6 +145,36 @@ async fn notify_webhook(
     context: &HashMap<String, Formattable<'_>>,
     config: CronPolicyNotificationWebhook,
 ) -> Result<()> {
-    // TODO:
+    let method = match config.method {
+        CronPolicyNotificationWebhookMethod::Get => Method::GET,
+        CronPolicyNotificationWebhookMethod::Head => Method::HEAD,
+        CronPolicyNotificationWebhookMethod::Post => Method::POST,
+        CronPolicyNotificationWebhookMethod::Put => Method::PUT,
+        CronPolicyNotificationWebhookMethod::Delete => Method::DELETE,
+        CronPolicyNotificationWebhookMethod::Connect => Method::CONNECT,
+        CronPolicyNotificationWebhookMethod::Options => Method::OPTIONS,
+        CronPolicyNotificationWebhookMethod::Trace => Method::TRACE,
+        CronPolicyNotificationWebhookMethod::Patch => Method::PATCH,
+    };
+    let mut headers = HeaderMap::<HeaderValue>::with_capacity(config.headers.len());
+    for (name, value) in config.headers {
+        headers.insert(
+            HeaderName::from_lowercase(name.to_lowercase().as_bytes())
+                .context("failed to parse header name")?,
+            value.parse().context("failed to parse header value")?,
+        );
+    }
+    let body =
+        interpolator::format(&config.body, context).context("failed to make body from template")?;
+
+    let client = reqwest::Client::new();
+    client
+        .request(method, config.url)
+        .headers(headers)
+        .body(body)
+        .send()
+        .await
+        .context("failed to request to webhook")?;
+
     Ok(())
 }

@@ -24,11 +24,13 @@ mlua = { version = "0.8.9", features = ["luau", "serialize", "async", "send"] }
 # See https://docs.rs/notify/latest/notify/#crossbeam-channel--tokio
 notify = { version = "5.0.0", default-features = false }
 once_cell = "1.16.0"
+reqwest = { version = "0.11.18", default-features = false, features = ["rustls-tls", "json"] }
 schemars = { version = "0.8.11", features = ["url"] }
 secrecy = "0.8.0"
 serde = { version = "1.0.151", features = ["derive"] }
 serde_json = "1.0.91"
 serde_yaml = "0.9.16"
+slack-blocks = "0.25.0"
 stopper = "0.2.0"
 thiserror = "1.0.38"
 tokio = { version = "1.23.0", features = ["macros", "rt-multi-thread"] }

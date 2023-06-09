@@ -87,7 +87,6 @@ spec:
   notifications:
     slack:
       webhookUrl: "https://example.com"
-      channelId: "CHANNEL_ID"
       message: |
         `{policy.name}` *is firing*
         Following admission webhooks are not high-available:

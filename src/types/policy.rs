@@ -98,8 +98,6 @@ pub struct CronPolicyNotificationWebhook {
 pub struct CronPolicyNotificationSlack {
     /// Slack incoming webhook URL to notify
     pub webhook_url: Url,
-    /// Slack channel ID to notify
-    pub channel_id: String,
     /// Slack message template
     pub message: String,
 }
@@ -107,8 +105,10 @@ pub struct CronPolicyNotificationSlack {
 /// Configurations of notifications to notify when policy chech failed
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 pub struct CronPolicyNotification {
+    /// Configuration of a Slack webhook
     #[serde(default)]
     pub slack: Option<CronPolicyNotificationSlack>,
+    /// Configuration of a custom webhook
     #[serde(default)]
     pub webhook: Option<CronPolicyNotificationWebhook>,
 }
