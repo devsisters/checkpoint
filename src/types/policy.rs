@@ -21,10 +21,12 @@ pub struct CronPolicyResourceListParams {
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CronPolicyResource {
-    /// API group the resources belong to.
-    pub group: String,
-    /// API version the resources belong to.
-    pub version: String,
+    /// Optional API group the resources belong to.
+    /// If omitted, checkpoint will try to find group with provided kind.
+    pub group: Option<String>,
+    /// Optional API version the resources belong to.
+    /// If omitted, checkpoint will try to find latest version with provided kind.
+    pub version: Option<String>,
     /// Kind of the resources.
     pub kind: String,
     /// Optional plural name. Use inferred from kind if not specified.
