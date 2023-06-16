@@ -60,6 +60,10 @@ app.kubernetes.io/component: controller
 app.kubernetes.io/component: webhook
 {{- end }}
 
-{{- define "checkpoint.issuerName" -}}
+{{- define "checkpoint.selfSignedIssuerName" -}}
 {{ include "checkpoint.fullname" . }}-selfsigned
+{{- end -}}
+
+{{- define "checkpoint.caIssuerName" -}}
+{{ include "checkpoint.fullname" . }}-ca
 {{- end -}}

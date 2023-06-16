@@ -1,7 +1,16 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: {{ include "checkpoint.issuerName" . }}
+  name: {{ include "checkpoint.selfSignedIssuerName" . }}
   namespace: {{ .Release.Namespace }}
 spec:
   selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "checkpoint.caIssuerName" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  ca:
+    secretName: {{ include "checkpoint.fullname" . }}-ca-cert

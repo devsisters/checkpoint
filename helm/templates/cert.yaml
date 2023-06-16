@@ -1,17 +1,31 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: {{ include "checkpoint.fullname" . }}-ca
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "checkpoint.fullname" . }}-ca-cert
+  commonName: {{ include "checkpoint.fullname" . }}-ca
+  isCA: true
+  duration: 876000h # 100y
+  renewBefore: 360h # 15d
+  issuerRef:
+    name: {{ include "checkpoint.selfSignedIssuerName" . }}
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: {{ include "checkpoint.fullname" . }}
   namespace: {{ .Release.Namespace }}
 spec:
   secretName: {{ include "checkpoint.fullname" . }}-cert
   commonName: {{ printf "%s-webhook" (include "checkpoint.fullname" .) }}
   dnsNames:
-    - {{ printf "%s-webhook.%s" (include "checkpoint.fullname" .) .Release.Namespace }}
-    - {{ printf "%s-webhook.%s.svc" (include "checkpoint.fullname" .) .Release.Namespace }}
-  isCA: true
+  - {{ printf "%s-webhook.%s" (include "checkpoint.fullname" .) .Release.Namespace }}
+  - {{ printf "%s-webhook.%s.svc" (include "checkpoint.fullname" .) .Release.Namespace }}
   duration: 2160h # 90d
   renewBefore: 360h # 15d
   issuerRef:
-    name: {{ include "checkpoint.issuerName" . }}
+    name: {{ include "checkpoint.caIssuerName" . }}
     kind: Issuer
