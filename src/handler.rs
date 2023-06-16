@@ -1,3 +1,4 @@
+mod internal;
 pub mod lua;
 
 use axum::{extract, http::StatusCode, response, routing, Router};
@@ -13,14 +14,24 @@ use mlua::{Lua, LuaSerdeExt};
 
 use crate::types::rule::{MutatingRule, RuleSpec, ValidatingRule};
 
+#[derive(Clone)]
+pub struct AppState {
+    kube_client: kube::Client,
+}
+
 /// Prepare HTTP router
 pub fn create_app(kube_client: kube::Client) -> Router {
+    let app_state = AppState { kube_client };
+
+    let internal = internal::create_router();
+
     Router::new()
-        .route("/ping", routing::get(ping))
         .route("/validate/:rule_name", routing::post(validate_handler))
         .route("/mutate/:rule_name", routing::post(mutate_handler))
+        .nest("/internal", internal)
+        .with_state(app_state)
+        .route("/ping", routing::get(ping))
         .layer(tower_http::trace::TraceLayer::new_for_http())
-        .layer(extract::Extension(kube_client))
 }
 
 /// Errors can be raised within HTTP handler
@@ -74,7 +85,7 @@ async fn ping() -> &'static str {
 
 /// Validate HTTP API handler
 async fn validate_handler(
-    extract::Extension(kube_client): extract::Extension<kube::Client>,
+    extract::State(state): extract::State<AppState>,
     extract::Path(rule_name): extract::Path<String>,
     extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
@@ -91,7 +102,7 @@ async fn validate_handler(
     };
 
     // Prepare Kubernetes API
-    let vr_api = Api::<ValidatingRule>::all(kube_client.clone());
+    let vr_api = Api::<ValidatingRule>::all(state.kube_client.clone());
 
     // Get matching ValidatingRule
     let vr = vr_api
@@ -101,7 +112,7 @@ async fn validate_handler(
         .ok_or(Error::RuleNotFound)?;
 
     let lua = lua::prepare_lua_ctx(
-        kube_client,
+        state.kube_client,
         &vr.spec.0.service_account,
         vr.spec.0.timeout_seconds,
     )
@@ -141,7 +152,7 @@ pub async fn validate(
 }
 
 async fn mutate_handler(
-    extract::Extension(kube_client): extract::Extension<kube::Client>,
+    extract::State(state): extract::State<AppState>,
     extract::Path(rule_name): extract::Path<String>,
     extract::Json(req): extract::Json<AdmissionReview<DynamicObject>>,
 ) -> Result<response::Json<AdmissionReview<DynamicObject>>, Error> {
@@ -158,7 +169,7 @@ async fn mutate_handler(
     };
 
     // Prepare Kubernetes API
-    let mr_api = Api::<MutatingRule>::all(kube_client.clone());
+    let mr_api = Api::<MutatingRule>::all(state.kube_client.clone());
 
     // Get matching MutatingRule
     let mr = mr_api
@@ -168,7 +179,7 @@ async fn mutate_handler(
         .ok_or(Error::RuleNotFound)?;
 
     let lua = lua::prepare_lua_ctx(
-        kube_client,
+        state.kube_client,
         &mr.spec.0.service_account,
         mr.spec.0.timeout_seconds,
     )
