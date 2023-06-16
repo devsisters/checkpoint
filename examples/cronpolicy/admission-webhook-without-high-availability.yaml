@@ -1,7 +1,7 @@
 apiVersion: checkpoint.devsisters.com/v1
 kind: CronPolicy
 metadata:
-  name: admision-webhook-without-high-availability
+  name: admission-webhook-without-high-availability
 spec:
   suspend: false
   schedule: "* * * * *"
