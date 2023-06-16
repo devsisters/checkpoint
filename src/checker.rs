@@ -21,7 +21,39 @@ use crate::{
         CronPolicyNotification, CronPolicyNotificationSlack, CronPolicyNotificationWebhook,
         CronPolicyNotificationWebhookMethod, CronPolicyResource,
     },
+    util::find_group_version_pairs_by_kind,
 };
+
+async fn get_group_version_from_resource(
+    resource: &CronPolicyResource,
+    kube_client: kube::Client,
+) -> Result<(String, String)> {
+    if let Some(group) = &resource.group {
+        if let Some(version) = &resource.version {
+            return Ok((group.clone(), version.clone()));
+        }
+    }
+
+    let gvs = find_group_version_pairs_by_kind(&resource.kind, true, kube_client)
+        .await
+        .context("failed to find API group and versions")?;
+
+    if gvs.is_empty() {
+        Err(anyhow::anyhow!(
+            "specifed kind (`{}`) does not have matching group/versions",
+            resource.kind
+        ))
+    } else if gvs.len() > 1 {
+        Err(anyhow::anyhow!(
+            "specifed kind (`{}`) has multiple matching group/versions",
+            resource.kind
+        ))
+    } else {
+        let mut gvs = gvs;
+        let gv = gvs.pop().unwrap();
+        Ok(gv)
+    }
+}
 
 pub async fn resources_to_lua_values<'lua>(
     lua: &'lua Lua,
@@ -31,20 +63,23 @@ pub async fn resources_to_lua_values<'lua>(
     resources
         .iter()
         .map(|resource| {
-            let gvk = GroupVersionKind::gvk(&resource.group, &resource.version, &resource.kind);
-            let ar = if let Some(plural) = &resource.plural {
-                ApiResource::from_gvk_with_plural(&gvk, plural)
-            } else {
-                ApiResource::from_gvk(&gvk)
-            };
-            let api = if let Some(namespace) = &resource.namespace {
-                Api::<DynamicObject>::namespaced_with(kube_client.clone(), namespace, &ar)
-            } else {
-                Api::<DynamicObject>::all_with(kube_client.clone(), &ar)
-            };
-
+            let kube_client = kube_client.clone();
             let lua = &lua;
             async move {
+                let (group, version) =
+                    get_group_version_from_resource(resource, kube_client.clone()).await?;
+                let gvk = GroupVersionKind::gvk(&group, &version, &resource.kind);
+                let ar = if let Some(plural) = &resource.plural {
+                    ApiResource::from_gvk_with_plural(&gvk, plural)
+                } else {
+                    ApiResource::from_gvk(&gvk)
+                };
+                let api = if let Some(namespace) = &resource.namespace {
+                    Api::<DynamicObject>::namespaced_with(kube_client.clone(), namespace, &ar)
+                } else {
+                    Api::<DynamicObject>::all_with(kube_client.clone(), &ar)
+                };
+
                 if let Some(name) = &resource.name {
                     let object = api
                         .get_opt(name)
