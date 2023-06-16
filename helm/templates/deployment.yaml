@@ -45,6 +45,8 @@ spec:
           value: "{{ .Values.controller.service.port }}"
         - name: CONF_CA_BUNDLE_PATH
           value: /tmp/cert/ca.crt
+        - name: CONF_CHECKER_IMAGE
+          value: "{{ .Values.checker.image.repository | default .Values.image.repository }}:{{ .Values.checker.image.tag | default .Values.image.tag | default .Chart.AppVersion }}"
         volumeMounts:
         - name: certs
           mountPath: /tmp/cert

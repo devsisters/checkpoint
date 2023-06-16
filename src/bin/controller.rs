@@ -6,20 +6,35 @@ use futures_util::{
     stream::{FuturesUnordered, StreamExt, TryStreamExt},
 };
 use k8s_openapi::{
-    api::admissionregistration::v1::{
-        MutatingWebhookConfiguration, ValidatingWebhookConfiguration,
+    api::{
+        admissionregistration::v1::{MutatingWebhookConfiguration, ValidatingWebhookConfiguration},
+        batch::v1::CronJob,
+        core::v1::ServiceAccount,
+        rbac::v1::{ClusterRole, ClusterRoleBinding, Role, RoleBinding},
     },
     ByteString,
 };
 use kube::{
     api::{Api, ListParams, Patch, PatchParams},
-    runtime::Controller,
-    ResourceExt,
+    runtime::{
+        controller::{self, Action},
+        reflector::ObjectRef,
+        Controller,
+    },
+    Resource, ResourceExt,
 };
 use stopper::Stopper;
 use tokio::sync::{broadcast::Sender, RwLock};
 
-use checkpoint::config::ControllerConfig;
+use checkpoint::{
+    config::ControllerConfig,
+    leader_election::Lease,
+    reconcile,
+    types::{
+        policy::CronPolicy,
+        rule::{MutatingRule, ValidatingRule},
+    },
+};
 
 /// Generate future that awaits shutdown signal
 async fn shutdown_signal(shutdown_signal_broadcast_tx: Sender<()>, stopper: Stopper) {
@@ -74,11 +89,11 @@ async fn reload_ca_bundle(
     }
 
     let vwcs = vwc_api
-        .list(&ListParams::default().labels(checkpoint::reconcile::VALIDATINGRULE_OWNED_LABEL_KEY))
+        .list(&ListParams::default().labels(reconcile::rule::VALIDATINGRULE_OWNED_LABEL_KEY))
         .await?
         .items;
     let mwcs = mwc_api
-        .list(&ListParams::default().labels(checkpoint::reconcile::MUTATINGRULE_OWNED_LABEL_KEY))
+        .list(&ListParams::default().labels(reconcile::rule::MUTATINGRULE_OWNED_LABEL_KEY))
         .await?
         .items;
 
@@ -90,7 +105,7 @@ async fn reload_ca_bundle(
                     // Then the controller watching the WC will reconcile with new CA bundle
                     let annotations = wc.annotations_mut();
                     annotations.insert(
-                        checkpoint::reconcile::SHOULD_UPDATE_ANNOTATION_KEY.to_string(),
+                        reconcile::rule::SHOULD_UPDATE_ANNOTATION_KEY.to_string(),
                         "true".to_string(),
                     );
                     async move {
@@ -118,6 +133,17 @@ async fn reload_ca_bundle(
     Ok(())
 }
 
+async fn controller_for_each<T, E1, E2>(
+    res: Result<(ObjectRef<T>, Action), controller::Error<E1, E2>>,
+) where
+    T: Resource,
+{
+    match res {
+        Ok((object, _)) => tracing::info!(name = object.name, "reconciled"),
+        Err(error) => tracing::error!(%error, "reconcile failed"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -133,6 +159,7 @@ async fn main() -> Result<()> {
         tokio::sync::broadcast::channel::<()>(1);
     let mut shutdown_signal_broadcast_rx2 = shutdown_signal_broadcast_tx.subscribe();
     let mut shutdown_signal_broadcast_rx3 = shutdown_signal_broadcast_tx.subscribe();
+    let mut shutdown_signal_broadcast_rx4 = shutdown_signal_broadcast_tx.subscribe();
     let shutdown_signal_fut = shutdown_signal(shutdown_signal_broadcast_tx, stopper.clone());
     tokio::spawn(async move {
         shutdown_signal_fut.await;
@@ -143,7 +170,7 @@ async fn main() -> Result<()> {
     tracing::info!("attempting to acquire leader lease...");
     let hostname = hostname::get()?;
     let hostname = hostname.to_string_lossy();
-    let lease_fut = checkpoint::leader_election::Lease::acquire_or_create(
+    let lease_fut = Lease::acquire_or_create(
         client.clone(),
         &default_namespace,
         "checkpoint.devsisters.com",
@@ -153,7 +180,7 @@ async fn main() -> Result<()> {
         lease = lease_fut => {
             lease?
         }
-        _ = shutdown_signal_broadcast_rx3.recv() => {
+        _ = shutdown_signal_broadcast_rx1.recv() => {
             // Early exit when shutdown signal is received
             return Ok(());
         }
@@ -167,10 +194,17 @@ async fn main() -> Result<()> {
     let ca_bundle = Arc::new(RwLock::new(ca_bundle));
 
     // Prepare Kubernetes APIs
-    let vr_api = Api::<checkpoint::types::rule::ValidatingRule>::all(client.clone());
+    let vr_api = Api::<ValidatingRule>::all(client.clone());
     let vwc_api = Api::<ValidatingWebhookConfiguration>::all(client.clone());
-    let mr_api = Api::<checkpoint::types::rule::MutatingRule>::all(client.clone());
+    let mr_api = Api::<MutatingRule>::all(client.clone());
     let mwc_api = Api::<MutatingWebhookConfiguration>::all(client.clone());
+    let cp_api = Api::<CronPolicy>::all(client.clone());
+    let sa_api = Api::<ServiceAccount>::all(client.clone());
+    let r_api = Api::<Role>::all(client.clone());
+    let rb_api = Api::<RoleBinding>::all(client.clone());
+    let cr_api = Api::<ClusterRole>::all(client.clone());
+    let crb_api = Api::<ClusterRoleBinding>::all(client.clone());
+    let cj_api = Api::<CronJob>::all(client.clone());
 
     // Prepare TLS CA bundle reloader
     let mut watcher = checkpoint::filewatcher::FileWatcher::new(
@@ -199,28 +233,25 @@ async fn main() -> Result<()> {
     watcher.watch(config.ca_bundle_path.clone());
     watcher.spawn()?;
 
+    let controller_ctx = Arc::new(reconcile::ReconcilerContext {
+        client,
+        config,
+        ca_bundle,
+    });
+
     // Spawn ValidatingRule controller
     let vr_controller_handle = tokio::spawn(
         Controller::new(vr_api, Default::default())
             .owns(vwc_api, Default::default())
             .graceful_shutdown_on(async move {
-                let _ = shutdown_signal_broadcast_rx1.recv().await;
+                let _ = shutdown_signal_broadcast_rx2.recv().await;
             })
             .run(
-                checkpoint::reconcile::reconcile_validatingrule,
-                checkpoint::reconcile::error_policy,
-                Arc::new(checkpoint::reconcile::ReconcilerContext {
-                    client: client.clone(),
-                    config: config.clone(),
-                    ca_bundle: ca_bundle.clone(),
-                }),
+                reconcile::rule::reconcile_validatingrule,
+                reconcile::error_policy,
+                controller_ctx.clone(),
             )
-            .for_each(|res| async move {
-                match res {
-                    Ok(object) => tracing::info!(?object, "reconciled"),
-                    Err(error) => tracing::error!(%error, "reconcile failed"),
-                }
-            }),
+            .for_each(controller_for_each),
     );
     tracing::info!("spawned validatingrule controller");
 
@@ -229,28 +260,44 @@ async fn main() -> Result<()> {
         Controller::new(mr_api, Default::default())
             .owns(mwc_api, Default::default())
             .graceful_shutdown_on(async move {
-                let _ = shutdown_signal_broadcast_rx2.recv().await;
+                let _ = shutdown_signal_broadcast_rx3.recv().await;
             })
             .run(
-                checkpoint::reconcile::reconcile_mutatingrule,
-                checkpoint::reconcile::error_policy,
-                Arc::new(checkpoint::reconcile::ReconcilerContext {
-                    client,
-                    config,
-                    ca_bundle,
-                }),
+                reconcile::rule::reconcile_mutatingrule,
+                reconcile::error_policy,
+                controller_ctx.clone(),
             )
-            .for_each(|res| async move {
-                match res {
-                    Ok((object, _)) => tracing::info!(name = object.name, "reconciled"),
-                    Err(error) => tracing::error!(%error, "reconcile failed"),
-                }
-            }),
+            .for_each(controller_for_each),
     );
     tracing::info!("spawned mutatingrule controller");
 
+    // Spawn CronPolicy controller
+    let cp_controller_handle = tokio::spawn(
+        Controller::new(cp_api, Default::default())
+            .owns(sa_api, Default::default())
+            .owns(r_api, Default::default())
+            .owns(rb_api, Default::default())
+            .owns(cr_api, Default::default())
+            .owns(crb_api, Default::default())
+            .owns(cj_api, Default::default())
+            .graceful_shutdown_on(async move {
+                let _ = shutdown_signal_broadcast_rx4.recv().await;
+            })
+            .run(
+                reconcile::policy::reconcile_cronpolicy,
+                reconcile::error_policy,
+                controller_ctx,
+            )
+            .for_each(controller_for_each),
+    );
+    tracing::info!("spawned cronpolicy controller");
+
     // Await all spawned futures
-    let res = tokio::try_join!(vr_controller_handle, mr_controller_handle);
+    let res = tokio::try_join!(
+        vr_controller_handle,
+        mr_controller_handle,
+        cp_controller_handle
+    );
     tracing::info!("controllers terminated");
 
     tracing::info!("releasing lease...");

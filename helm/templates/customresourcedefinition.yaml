@@ -371,3 +371,168 @@ spec:
       status: {}
 
 ---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    {{- include "checkpoint.labels" . | nindent 4 }}
+  name: cronpolicies.checkpoint.devsisters.com
+spec:
+  group: checkpoint.devsisters.com
+  names:
+    categories: []
+    kind: CronPolicy
+    plural: cronpolicies
+    shortNames:
+    - cp
+    singular: cronpolicy
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns: []
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for CronPolicySpec via `CustomResource`
+        properties:
+          spec:
+            description: CronPolicies check the specified resources with the provided Lua code periodically.
+            properties:
+              code:
+                description: Lua code to evaluate on the resources.
+                type: string
+              namespace:
+                default: default
+                description: Namespace name for the CronJob.  Defaults to "default".
+                type: string
+              notifications:
+                description: Configurations of notifications to notify when policy check failed.
+                properties:
+                  slack:
+                    description: Configuration of a Slack webhook
+                    nullable: true
+                    properties:
+                      message:
+                        description: Slack message template. Curly braces must be repeated (`{{` or `}}`) to distinguished from template variables
+                        type: string
+                      webhookUrl:
+                        description: Slack incoming webhook URL to notify
+                        format: uri
+                        type: string
+                    required:
+                    - message
+                    - webhookUrl
+                    type: object
+                  webhook:
+                    description: Configuration of a custom webhook
+                    nullable: true
+                    properties:
+                      body:
+                        description: Body template of the webhook. Curly braces must be repeated (`{{` or `}}`) to distinguished from template variables
+                        type: string
+                      headers:
+                        additionalProperties:
+                          type: string
+                        default: {}
+                        description: Additional HTTP headers to append when requesting webhook
+                        type: object
+                      method:
+                        default: POST
+                        description: 'HTTP method to use when requesting webhook (default: POST)'
+                        enum:
+                        - GET
+                        - HEAD
+                        - POST
+                        - PUT
+                        - DELETE
+                        - CONNECT
+                        - OPTIONS
+                        - TRACE
+                        - PATCH
+                        type: string
+                      url:
+                        description: Url of the webhook
+                        format: uri
+                        type: string
+                    required:
+                    - body
+                    - url
+                    type: object
+                type: object
+              resources:
+                description: Specifier for the resources to check.
+                items:
+                  description: Specifier for the resources to check.
+                  properties:
+                    group:
+                      description: API group the resources belong to.
+                      type: string
+                    kind:
+                      description: Kind of the resources.
+                      type: string
+                    listParams:
+                      description: Optional list params to list the resources.
+                      nullable: true
+                      properties:
+                        fieldSelector:
+                          description: Optional selector to restrict the resources by their fields. List all if not specified.
+                          nullable: true
+                          type: string
+                        labelSelector:
+                          description: Optional selector to restrict the resources by their labels. List all if not specified.
+                          nullable: true
+                          type: string
+                      type: object
+                    name:
+                      description: Optional name of the resources. If name is not specified, the checker will list all resources. If name is specified, the checker will get the specific resource.
+                      nullable: true
+                      type: string
+                    namespace:
+                      description: Optional Namespace name of the resources. List from all Namespaces if not specified.
+                      nullable: true
+                      type: string
+                    plural:
+                      description: Optional plural name. Use inferred from kind if not specified.
+                      nullable: true
+                      type: string
+                    version:
+                      description: API version the resources belong to.
+                      type: string
+                  required:
+                  - group
+                  - kind
+                  - version
+                  type: object
+                type: array
+              restartPolicy:
+                description: 'Restart policy for all containers within the pod. One of OnFailure, Never. More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy'
+                enum:
+                - OnFailure
+                - Never
+                type: string
+              schedule:
+                description: The schedule in Cron format, see https://en.wikipedia.org/wiki/Cron.
+                type: string
+              suspend:
+                default: false
+                description: This flag tells the controller to suspend subsequent executions, it does not apply to already started executions.  Defaults to false.
+                type: boolean
+            required:
+            - code
+            - notifications
+            - resources
+            - restartPolicy
+            - schedule
+            type: object
+          status:
+            nullable: true
+            type: object
+        required:
+        - spec
+        title: CronPolicy
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---

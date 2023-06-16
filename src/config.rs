@@ -1,6 +1,11 @@
-use std::path::PathBuf;
+use std::{borrow::Cow, path::PathBuf};
 
-use serde::Deserialize;
+use serde::{
+    de::{self, DeserializeOwned},
+    Deserialize, Deserializer,
+};
+
+use crate::types::policy::{CronPolicyNotification, CronPolicyResource};
 
 fn default_listen_addr() -> String {
     "0.0.0.0:3000".to_string()
@@ -17,6 +22,9 @@ pub struct ControllerConfig {
 
     /// Base64 encoded PEM CA bundle file path for the checkpoint webhook
     pub ca_bundle_path: PathBuf,
+
+    /// Container image URL for checker
+    pub checker_image: String,
 }
 
 impl ControllerConfig {
@@ -37,6 +45,35 @@ pub struct WebhookConfig {
 }
 
 impl WebhookConfig {
+    pub fn try_from_env() -> Result<Self, envy::Error> {
+        envy::prefixed("CONF_").from_env()
+    }
+}
+
+fn deserialize_json_string<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let s = Cow::<'_, str>::deserialize(d)?;
+    serde_json::from_str(&s).map_err(de::Error::custom)
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct CheckerConfig {
+    /// Name of the policy
+    pub policy_name: String,
+    /// Specifier for the resources to check in JSON string,
+    #[serde(deserialize_with = "deserialize_json_string")]
+    pub resources: Vec<CronPolicyResource>,
+    /// Lua code to evaluate on the resources.
+    pub code: String,
+    /// Notification configurations
+    #[serde(deserialize_with = "deserialize_json_string")]
+    pub notifications: CronPolicyNotification,
+}
+
+impl CheckerConfig {
     pub fn try_from_env() -> Result<Self, envy::Error> {
         envy::prefixed("CONF_").from_env()
     }

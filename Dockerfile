@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1.63.0 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.70.0 AS chef
 WORKDIR app
 
 FROM chef AS planner
@@ -21,4 +21,4 @@ RUN cargo build --release
 
 FROM docker.io/debian:stable-slim AS runtime
 
-COPY --from=builder /app/target/release/checkpoint /app/target/release/checkpoint-controller /app/target/release/checkpoint-webhook /usr/local/bin/
+COPY --from=builder /app/target/release/checkpoint /app/target/release/checkpoint-controller /app/target/release/checkpoint-webhook /app/target/release/checkpoint-checker /usr/local/bin/

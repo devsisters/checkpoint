@@ -1,0 +1,110 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: CronPolicy
+metadata:
+  name: admission-webhook-without-high-availability
+spec:
+  suspend: false
+  schedule: "* * * * *"
+  resources:
+  - group: admissionregistration.k8s.io  
+    version: v1
+    kind: ValidatingWebhookConfiguration
+  - group: admissionregistration.k8s.io  
+    version: v1
+    kind: MutatingWebhookConfiguration
+  - group: ""
+    version: v1
+    kind: Endpoint
+  code: |
+    excludeWebhookConfigurations = {
+      someName=true,
+    }
+
+    function checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables)
+      if excludeWebhookConfigurations[webhookConfiguration["metadata"]["name"]] then
+        return
+      end
+      for _, webhook in webhookConfiguration["webhooks"] do
+        service = webhook["clientConfig"]["service"]
+        if not service then
+          continue
+        end
+        namespace = service["namespace"]
+        name = service["name"]
+
+        endpoint = endpointTable[namespace .. "/" .. name]
+        if endpoint == nil then
+          continue
+        end
+
+        subsets = endpoint["subsets"]
+        if subsets == nil then
+          table.insert(vulnerables, webhookConfiguration)
+          return
+        end
+
+        addresses = {}
+        addressesCount = 0
+        for _, subset in subsets do
+          for _, address in subset["addresses"] do
+            addressJsonString = toJsonString(address)
+            if not addresses[addressJsonString] then
+              addresses[addressJsonString] = true
+              addressesCount += 1
+            end
+          end
+        end
+
+        if addressesCount <= 1 then
+          table.insert(vulnerables, webhookConfiguration)
+        end
+      end
+    end
+
+    validatingwebhookconfigurations, mutatingwebhookconfigurations, endpoints = ...
+
+    endpointTable = {}
+    for _, endpoint in endpoints do
+      endpointTable[endpoint["metadata"]["namespace"] .. "/" .. endpoint["metadata"]["name"]] = endpoint
+    end
+
+    vulnerables = {}
+
+    for _, webhookConfiguration in validatingwebhookconfigurations do
+      checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables)
+    end
+    for _, webhookConfiguration in mutatingwebhookconfigurations do
+      checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables)
+    end
+
+    if #vulnerables > 0 then
+      names = ""
+      for _, webhookConfigurations in vulnerables do
+        names ..= "- `" .. webhookConfigurations["metadata"]["name"] .. "`\n"
+      end
+      return {names=names}
+    end
+  notifications:
+    slack:
+      webhookUrl: "https://example.com"
+      message: |
+        `{policy.name}` *is firing*
+        Following admission webhooks are not high-available:
+        {output.names}
+    webhook:
+      url: "https://example.com"
+      method: POST
+      headers:
+        content-type: application/json
+      body: |
+        {{
+          "text": "{policy.name} is firing",
+          "blocks": [{{
+            "type": "section",
+            "text": {{
+              "type": "mrkdwn",
+              "text": "`{policy.name}` *is firing*\nFollowing admission webhooks are not high-available:\n{output.names}"
+            }}
+          }}]
+        }}
+  restartPolicy: Never

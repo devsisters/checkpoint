@@ -9,16 +9,22 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use itertools::Itertools;
 use json_patch::PatchOperation;
-use kube::core::{admission::AdmissionRequest, DynamicObject, ObjectList};
+use kube::{
+    core::{admission::AdmissionRequest, DynamicObject, ObjectList},
+    ResourceExt,
+};
 use mlua::{Lua, LuaSerdeExt};
 use tracing::Instrument;
 
 use checkpoint::{
+    checker::resources_to_lua_values,
     handler::{
-        lua::helper::{register_lua_helper_functions, KubeGetArgument, KubeListArgument},
+        lua::helper::{KubeGetArgument, KubeListArgument},
         mutate, validate,
     },
+    lua::{helper::register_lua_helper_functions, prepare_lua_ctx},
     types::{
+        policy::CronPolicy,
         rule::{MutatingRule, ValidatingRule},
         testcase::{Case, TestCase},
     },
@@ -33,12 +39,19 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Test(TestArgs),
+    Check(CheckArgs),
 }
 
 #[derive(Args, Debug)]
 struct TestArgs {
     #[clap(value_parser)]
     test_case_paths: Vec<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct CheckArgs {
+    #[clap(value_parser)]
+    cron_policy_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -64,6 +77,7 @@ async fn main() -> Result<()> {
 
     match cli.subcommand {
         Commands::Test(args) => cli_test(args).await,
+        Commands::Check(args) => cli_check(args).await,
     }
 }
 
@@ -76,7 +90,7 @@ async fn cli_test(args: TestArgs) -> Result<()> {
             .await
             .with_context(|| {
                 format!(
-                    "failed to test for test case file {}",
+                    "failed to test for test case file `{}`",
                     test_case_path.display()
                 )
             })?;
@@ -260,7 +274,8 @@ async fn run_mutating_rule(
     request: &mut AdmissionRequest<DynamicObject>,
     lua_app_data: LuaContextAppData,
 ) -> Result<CaseResult> {
-    let lua = prepare_lua_ctx(lua_app_data).context("failed to prepare Lua context")?;
+    let lua =
+        prepare_lua_ctx_for_test_case(lua_app_data).context("failed to prepare Lua context")?;
 
     let response = mutate(&rule.spec.0, request, lua)
         .await
@@ -302,7 +317,8 @@ async fn run_validating_rule(
     request: &AdmissionRequest<DynamicObject>,
     lua_app_data: LuaContextAppData,
 ) -> Result<CaseResult> {
-    let lua = prepare_lua_ctx(lua_app_data).context("failed to prepare Lua context")?;
+    let lua =
+        prepare_lua_ctx_for_test_case(lua_app_data).context("failed to prepare Lua context")?;
 
     let response = validate(&rule.spec.0, request, lua)
         .await
@@ -322,7 +338,7 @@ struct LuaContextAppData {
 }
 
 /// Prepare test Lua context with stubs
-fn prepare_lua_ctx(app_data: LuaContextAppData) -> Result<Lua> {
+fn prepare_lua_ctx_for_test_case(app_data: LuaContextAppData) -> Result<Lua> {
     let lua = Lua::new();
     lua.set_app_data(app_data);
 
@@ -385,4 +401,71 @@ fn lua_kube_list_stub<'lua>(
             .serialize_none_to_null(false)
             .serialize_unit_to_null(false),
     )
+}
+
+async fn cli_check(args: CheckArgs) -> Result<()> {
+    for cronpolicy_path in args.cron_policy_paths {
+        let cronpolicy_path_span =
+            tracing::info_span!("cronpolicy-file", path = %cronpolicy_path.display());
+        check_cronpolicy_path(&cronpolicy_path)
+            .instrument(cronpolicy_path_span)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to check for cronpolicy file `{}`",
+                    cronpolicy_path.display()
+                )
+            })?;
+    }
+    Ok(())
+}
+
+async fn check_cronpolicy_path(cronpolicy_path: &Path) -> Result<()> {
+    // Open and deserialize cronpolicy file
+    let cronpolicy_file =
+        fs::File::open(cronpolicy_path).context("failed to open cronpolicy file")?;
+    let cronpolicy: CronPolicy =
+        serde_yaml::from_reader(cronpolicy_file).context("failed to deserialize cronpolicy")?;
+
+    let cronpolicy_name = cronpolicy.name_any();
+
+    let cronpolicy_span = tracing::info_span!("cronpolicy", name = %cronpolicy_name);
+    check_cronpolicy(cronpolicy)
+        .instrument(cronpolicy_span)
+        .await
+        .with_context(|| format!("faild to check for cronpolicy `{}`", cronpolicy_name))?;
+
+    Ok(())
+}
+
+async fn check_cronpolicy(cronpolicy: CronPolicy) -> Result<()> {
+    let kube_config = kube::Config::infer()
+        .await
+        .context("failed to infer Kubernetes config")?;
+    let kube_client: kube::Client = kube_config
+        .try_into()
+        .context("failed to make Kubernetes client")?;
+
+    let lua = prepare_lua_ctx().context("failed to prepare Lua context")?;
+
+    let resource_values =
+        resources_to_lua_values(&lua, kube_client, &cronpolicy.spec.resources).await?;
+    let resource_values = mlua::MultiValue::from_vec(resource_values);
+
+    let lua_chunk = lua
+        .load(&cronpolicy.spec.code)
+        .set_name("checker code")
+        .context("failed to load Lua code")?;
+
+    let output: Option<HashMap<String, String>> = lua_chunk
+        .call(resource_values)
+        .context("failed to run Lua code")?;
+
+    if let Some(output) = output {
+        tracing::error!(output = ?output, "Lua code exited with output");
+        Err(anyhow!("Lua code exited with output: {:?}", output))
+    } else {
+        tracing::info!("Lua code exited with no output");
+        Ok(())
+    }
 }

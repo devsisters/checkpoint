@@ -1,3 +1,9 @@
+checker:
+  image:
+    repository: ""
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+
 controller:
   replicaCount: 1
   podAnnotations: {}
