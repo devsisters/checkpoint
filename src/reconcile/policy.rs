@@ -461,8 +461,24 @@ pub async fn reconcile_cronpolicy(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_make_roles_and_clusterroles() {
+    #[tokio::test]
+    async fn test_make_roles_and_clusterroles() {
+        // Mock Kubernetes client
+        // This client will not work
+        let kube_config = kube::Config {
+            cluster_url: "https://localhost:443".parse().unwrap(),
+            default_namespace: "default".to_string(),
+            root_cert: None,
+            connect_timeout: None,
+            read_timeout: None,
+            write_timeout: None,
+            accept_invalid_certs: true,
+            auth_info: Default::default(),
+            proxy_url: None,
+            tls_server_name: None,
+        };
+        let kube_client: kube::Client = kube_config.try_into().unwrap();
+
         let cp_name = "cron-policy-name".to_string();
         let cronjob_namespace = "cron-policy-namespace".to_string();
         let oref = OwnerReference::default();
@@ -473,7 +489,10 @@ mod tests {
             cronjob_namespace.clone(),
             oref.clone(),
             &resources,
-        );
+            kube_client.clone(),
+        )
+        .await
+        .unwrap();
         assert_eq!(roles, Vec::new());
         assert_eq!(clusterrole, None);
 
@@ -481,8 +500,8 @@ mod tests {
         let other_namespace = "other-namespace".to_string();
         let resources = vec![
             CronPolicyResource {
-                group: "".to_string(),
-                version: "v1".to_string(),
+                group: Some("".to_string()),
+                version: Some("v1".to_string()),
                 kind: "Namespace".to_string(),
                 plural: None,
                 namespace: None,
@@ -490,8 +509,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "".to_string(),
-                version: "v1".to_string(),
+                group: Some("".to_string()),
+                version: Some("v1".to_string()),
                 kind: "Pod".to_string(),
                 plural: None,
                 namespace: Some(some_namespace.clone()),
@@ -499,8 +518,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "apps".to_string(),
-                version: "v1".to_string(),
+                group: Some("apps".to_string()),
+                version: Some("v1".to_string()),
                 kind: "Deployment".to_string(),
                 plural: None,
                 namespace: None,
@@ -508,8 +527,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "apps".to_string(),
-                version: "v1".to_string(),
+                group: Some("apps".to_string()),
+                version: Some("v1".to_string()),
                 kind: "StatefulSet".to_string(),
                 plural: None,
                 namespace: Some(some_namespace.clone()),
@@ -517,8 +536,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "apps".to_string(),
-                version: "v1".to_string(),
+                group: Some("apps".to_string()),
+                version: Some("v1".to_string()),
                 kind: "DaemonSet".to_string(),
                 plural: None,
                 namespace: Some(other_namespace.clone()),
@@ -527,8 +546,15 @@ mod tests {
             },
         ];
 
-        let (roles, clusterrole) =
-            make_roles_and_clusterroles(cp_name.clone(), cronjob_namespace, oref, &resources);
+        let (roles, clusterrole) = make_roles_and_clusterroles(
+            cp_name.clone(),
+            cronjob_namespace,
+            oref,
+            &resources,
+            kube_client,
+        )
+        .await
+        .unwrap();
         assert_eq!(roles.len(), 2);
         let role = &roles[0].0;
         assert_eq!(role.name_any(), cp_name);
