@@ -66,7 +66,7 @@ pub struct CheckerConfig {
     /// Specifier for the resources to check in JSON string,
     #[serde(deserialize_with = "deserialize_json_string")]
     pub resources: Vec<CronPolicyResource>,
-    /// Lua code to evaluate on the resources.
+    /// JS code to evaluate on the resources.
     pub code: String,
     /// Notification configurations
     #[serde(deserialize_with = "deserialize_json_string")]

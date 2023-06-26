@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 
 use checkpoint::{
-    checker::{notify, resources_to_lua_values},
+    checker::{fetch_resources, notify, prepare_js_runtime},
     config::CheckerConfig,
-    lua::prepare_lua_ctx,
+    js::eval,
 };
 
 #[tokio::main]
@@ -20,19 +20,20 @@ async fn main() -> Result<()> {
         .try_into()
         .context("failed to make Kubernetes client")?;
 
-    let lua = prepare_lua_ctx().context("failed to prepare Lua context")?;
+    // Fetch resources
+    let resources = fetch_resources(kube_client, &config.resources).await?;
 
-    let resource_values = resources_to_lua_values(&lua, kube_client, &config.resources).await?;
-    let resource_values = mlua::MultiValue::from_vec(resource_values);
+    // Set up runtime
+    let mut js_runtime =
+        prepare_js_runtime(resources).context("failed to prepare JavaScript runtime")?;
 
-    let lua_chunk = lua
-        .load(&config.code)
-        .set_name("checker code")
-        .context("failed to load Lua code")?;
+    js_runtime
+        .execute_script("<checkpoint>", config.code.into())
+        .context("failed to execute JavaScript code")?;
 
-    let output: Option<HashMap<String, String>> = lua_chunk
-        .call(resource_values)
-        .context("failed to run Lua code")?;
+    let output: Option<HashMap<String, String>> =
+        eval(&mut js_runtime, "__checkpoint_get_context(\"output\")")
+            .context("failed to evaluate JavaScript code")?;
 
     if let Some(output) = output {
         notify(config.policy_name, output, config.notifications).await;

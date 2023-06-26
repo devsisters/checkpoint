@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -13,16 +12,15 @@ use kube::{
     core::{admission::AdmissionRequest, DynamicObject, ObjectList},
     ResourceExt,
 };
-use mlua::{Lua, LuaSerdeExt};
 use tracing::Instrument;
 
 use checkpoint::{
-    checker::resources_to_lua_values,
+    checker::fetch_resources,
     handler::{
-        lua::helper::{KubeGetArgument, KubeListArgument},
+        js::helper::{KubeGetArgument, KubeListArgument, KubeListArgumentListParamsVersionMatch},
         mutate, validate,
     },
-    lua::{helper::register_lua_helper_functions, prepare_lua_ctx},
+    js::eval,
     types::{
         policy::CronPolicy,
         rule::{MutatingRule, ValidatingRule},
@@ -175,11 +173,6 @@ async fn run_case(
         .try_collect()
         .context("failed to load kubeList stub map")?;
 
-    let lua_app_data = LuaContextAppData {
-        kube_get_stub_map: Arc::new(kube_get_stub_map),
-        kube_list_stub_map: Arc::new(kube_list_stub_map),
-    };
-
     let expected = CaseResult {
         allowed: case.expected.allowed,
         message: case.expected.message,
@@ -205,7 +198,7 @@ async fn run_case(
             .ok_or_else(|| anyhow!("rule does not have name"))?;
         let rule_span = tracing::info_span!("mutating-rule", rule = rule_name);
 
-        actual = run_mutating_rule(rule, &mut request, lua_app_data.clone())
+        actual = run_mutating_rule(rule, &mut request, &kube_get_stub_map, &kube_list_stub_map)
             .instrument(rule_span.clone())
             .await
             .with_context(|| format!("failed to test for rule \"{}\"", rule_name))?;
@@ -227,7 +220,7 @@ async fn run_case(
             .ok_or_else(|| anyhow!("rule does not have name"))?;
         let rule_span = tracing::info_span!("validating-rule", rule = rule_name);
 
-        actual = run_validating_rule(rule, &request, lua_app_data.clone())
+        actual = run_validating_rule(rule, &request, &kube_get_stub_map, &kube_list_stub_map)
             .instrument(rule_span.clone())
             .await
             .with_context(|| format!("failed to test for rule \"{}\"", rule_name))?;
@@ -272,12 +265,13 @@ async fn run_case(
 async fn run_mutating_rule(
     rule: &MutatingRule,
     request: &mut AdmissionRequest<DynamicObject>,
-    lua_app_data: LuaContextAppData,
+    kube_get: &HashMap<KubeGetArgument, Option<DynamicObject>>,
+    kube_list: &HashMap<KubeListArgument, ObjectList<DynamicObject>>,
 ) -> Result<CaseResult> {
-    let lua =
-        prepare_lua_ctx_for_test_case(lua_app_data).context("failed to prepare Lua context")?;
+    let js_context = prepare_js_context_for_test_case(kube_get, kube_list)
+        .context("failed to prepare JavaScript stub code")?;
 
-    let response = mutate(&rule.spec.0, request, lua)
+    let response = mutate(&rule.spec.0, request, js_context)
         .await
         .context("failed to mutate")?;
     let patch = response
@@ -315,12 +309,13 @@ async fn run_mutating_rule(
 async fn run_validating_rule(
     rule: &ValidatingRule,
     request: &AdmissionRequest<DynamicObject>,
-    lua_app_data: LuaContextAppData,
+    kube_get: &HashMap<KubeGetArgument, Option<DynamicObject>>,
+    kube_list: &HashMap<KubeListArgument, ObjectList<DynamicObject>>,
 ) -> Result<CaseResult> {
-    let lua =
-        prepare_lua_ctx_for_test_case(lua_app_data).context("failed to prepare Lua context")?;
+    let js_context = prepare_js_context_for_test_case(kube_get, kube_list)
+        .context("failed to prepare JavaScript stub code")?;
 
-    let response = validate(&rule.spec.0, request, lua)
+    let response = validate(&rule.spec.0, request, js_context)
         .await
         .context("failed to validate")?;
 
@@ -331,76 +326,129 @@ async fn run_validating_rule(
     })
 }
 
-#[derive(Clone)]
-struct LuaContextAppData {
-    kube_get_stub_map: Arc<HashMap<KubeGetArgument, Option<DynamicObject>>>,
-    kube_list_stub_map: Arc<HashMap<KubeListArgument, ObjectList<DynamicObject>>>,
-}
+/// Prepare test JS context with stubs
+fn prepare_js_context_for_test_case(
+    kube_get: &HashMap<KubeGetArgument, Option<DynamicObject>>,
+    kube_list: &HashMap<KubeListArgument, ObjectList<DynamicObject>>,
+) -> Result<String> {
+    let mut code = r#"function kubeGet(args) {
+    if (false) {
+        // Nothing
+    }"#
+    .to_string();
 
-/// Prepare test Lua context with stubs
-fn prepare_lua_ctx_for_test_case(app_data: LuaContextAppData) -> Result<Lua> {
-    let lua = Lua::new();
-    lua.set_app_data(app_data);
-
-    lua.sandbox(true)
-        .context("failed to set sandbox mode for Lua context")?;
-
-    register_lua_helper_functions(&lua).context("failed to register Lua helper functions")?;
-
-    {
-        let globals = lua.globals();
-
-        let kube_get = lua
-            .create_function(lua_kube_get_stub)
-            .context("failed to create Lua helper function")?;
-        globals
-            .set("kubeGet", kube_get)
-            .context("failed to set Lua helper function")?;
-        let kube_list = lua
-            .create_function(lua_kube_list_stub)
-            .context("failed to create Lua helper function")?;
-        globals
-            .set("kubeList", kube_list)
-            .context("failed to set Lua helper function")?;
+    // Populate kubeGet
+    for (args, object) in kube_get {
+        code += &format!(
+            r#" else if (args.kind === "{}" && args.version === "{}" && {} && {} && args.name === "{}") {{
+        return {};
+    }}"#,
+            args.kind,
+            args.version,
+            if let Some(plural) = &args.plural {
+                format!("args.plural === \"{}\"", plural)
+            } else {
+                "args.plural === undefined".to_string()
+            },
+            if let Some(namespace) = &args.namespace {
+                format!("args.namespace === \"{}\"", namespace)
+            } else {
+                "args.namespace === undefined".to_string()
+            },
+            args.name,
+            serde_json::to_string(&object).context("failed to serialize Kubernetes object")?,
+        );
     }
 
-    Ok(lua)
+    code += r#" else {
+        throw new Error("kubeGet stub not found");
+    }
 }
+function kubeList(args) {
+    if (false) {
+        // Nothing
+    }"#;
 
-fn lua_kube_get_stub<'lua>(
-    lua: &'lua Lua,
-    argument: mlua::Value<'lua>,
-) -> mlua::Result<mlua::Value<'lua>> {
-    let args: KubeGetArgument = lua.from_value(argument)?;
-    let app_data = lua.app_data_ref::<LuaContextAppData>().unwrap();
-    let output = app_data
-        .kube_get_stub_map
-        .get(&args)
-        .ok_or_else(|| mlua::Error::external(anyhow!("kubeGet stub not found for {:?}", args)))?;
-    lua.to_value_with(
-        output,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
+    // Populate kubeList
+    for (args, object_list) in kube_list {
+        code += &format!(
+            r#" else if (args.kind === "{}" && args.version === "{}" && {} && {} && {}) {{
+        return {};
+    }}"#,
+            args.kind,
+            args.version,
+            if let Some(plural) = &args.plural {
+                format!("args.plural === \"{}\"", plural)
+            } else {
+                "args.plural === undefined".to_string()
+            },
+            if let Some(namespace) = &args.namespace {
+                format!("args.namespace === \"{}\"", namespace)
+            } else {
+                "args.namespace === undefined".to_string()
+            },
+            if let Some(list_params) = &args.list_params {
+                format!(
+                    "{} && {} && {} && {} && {} && {} && {}",
+                    if let Some(label_selector) = &list_params.label_selector {
+                        format!("args.listParams.labelSelector === \"{}\"", label_selector)
+                    } else {
+                        "args.listParams.labelSelector === undefined".to_string()
+                    },
+                    if let Some(field_selector) = &list_params.field_selector {
+                        format!("args.listParams.fieldSelector === \"{}\"", field_selector)
+                    } else {
+                        "args.listParams.fieldSelector === undefined".to_string()
+                    },
+                    if let Some(timeout) = list_params.timeout {
+                        format!("args.listParams.timeout === {}", timeout)
+                    } else {
+                        "args.listParams.timeout === undefined".to_string()
+                    },
+                    if let Some(limit) = list_params.limit {
+                        format!("args.listParams.limit === {}", limit)
+                    } else {
+                        "args.listParams.limit === undefined".to_string()
+                    },
+                    if let Some(continue_token) = &list_params.continue_token {
+                        format!("args.listParams.continueToken === {}", continue_token)
+                    } else {
+                        "args.listParams.continueToken === undefined".to_string()
+                    },
+                    if let Some(version_match) = &list_params.version_match {
+                        format!(
+                            "args.listParams.versionMatch === {}",
+                            match version_match {
+                                KubeListArgumentListParamsVersionMatch::NotOlderThan =>
+                                    "NotOlderThan",
+                                KubeListArgumentListParamsVersionMatch::Exact => "Exact",
+                            }
+                        )
+                    } else {
+                        "args.listParams.versionMatch === undefined".to_string()
+                    },
+                    if let Some(resource_version) = &list_params.resource_version {
+                        format!("args.listParams.resourceVersion === {}", resource_version)
+                    } else {
+                        "args.listParams.resourceVersion === undefined".to_string()
+                    },
+                )
+            } else {
+                "(args.list_params === undefined || Object.keys(args.list_params).length === 0)"
+                    .to_string()
+            },
+            serde_json::to_string(&object_list)
+                .context("failed to serialize Kubernetes object list")?,
+        );
+    }
+
+    code += r#" else {
+        throw new Error("kubeList stub not found");
+    }
 }
+"#;
 
-fn lua_kube_list_stub<'lua>(
-    lua: &'lua Lua,
-    argument: mlua::Value<'lua>,
-) -> mlua::Result<mlua::Value<'lua>> {
-    let args: KubeListArgument = lua.from_value(argument)?;
-    let app_data = lua.app_data_ref::<LuaContextAppData>().unwrap();
-    let output = app_data
-        .kube_list_stub_map
-        .get(&args)
-        .ok_or_else(|| mlua::Error::external(anyhow!("kubeList stub not found for {:?}", args)))?;
-    lua.to_value_with(
-        output,
-        mlua::SerializeOptions::new()
-            .serialize_none_to_null(false)
-            .serialize_unit_to_null(false),
-    )
+    Ok(code)
 }
 
 async fn cli_check(args: CheckArgs) -> Result<()> {
@@ -446,26 +494,24 @@ async fn check_cronpolicy(cronpolicy: CronPolicy) -> Result<()> {
         .try_into()
         .context("failed to make Kubernetes client")?;
 
-    let lua = prepare_lua_ctx().context("failed to prepare Lua context")?;
+    let resources = fetch_resources(kube_client, &cronpolicy.spec.resources).await?;
 
-    let resource_values =
-        resources_to_lua_values(&lua, kube_client, &cronpolicy.spec.resources).await?;
-    let resource_values = mlua::MultiValue::from_vec(resource_values);
+    let mut js_runtime = checkpoint::checker::prepare_js_runtime(resources)
+        .context("failed to prepare JavaScript runtime")?;
 
-    let lua_chunk = lua
-        .load(&cronpolicy.spec.code)
-        .set_name("checker code")
-        .context("failed to load Lua code")?;
+    js_runtime
+        .execute_script("<checkpoint>", cronpolicy.spec.code.into())
+        .context("failed to execute JavaScript code")?;
 
-    let output: Option<HashMap<String, String>> = lua_chunk
-        .call(resource_values)
-        .context("failed to run Lua code")?;
+    let output: Option<HashMap<String, String>> =
+        eval(&mut js_runtime, "__checkpoint_get_context(\"output\")")
+            .context("failed to evaluate JavaScript code")?;
 
     if let Some(output) = output {
-        tracing::error!(output = ?output, "Lua code exited with output");
-        Err(anyhow!("Lua code exited with output: {:?}", output))
+        tracing::error!(output = ?output, "JavaScript code exited with output");
+        Err(anyhow!("JavaScript code exited with output: {:?}", output))
     } else {
-        tracing::info!("Lua code exited with no output");
+        tracing::info!("JavaScript code exited with no output");
         Ok(())
     }
 }

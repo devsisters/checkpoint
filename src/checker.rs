@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use deno_core::JsRuntime;
 use futures_util::{stream::FuturesOrdered, TryFutureExt, TryStreamExt};
 use http::{header::HeaderName, HeaderMap, HeaderValue, Method};
 use interpolator::Formattable;
@@ -10,13 +11,12 @@ use kube::{
     discovery::ApiResource,
     Api,
 };
-use mlua::{Lua, Value};
 use serde::Serialize;
 use slack_blocks::{blocks::Section, text::ToSlackMarkdown, Block};
 use tracing::Instrument;
 
 use crate::{
-    lua::lua_to_value,
+    js::set_context,
     types::policy::{
         CronPolicyNotification, CronPolicyNotificationSlack, CronPolicyNotificationWebhook,
         CronPolicyNotificationWebhookMethod, CronPolicyResource,
@@ -55,16 +55,21 @@ async fn get_group_version_from_resource(
     }
 }
 
-pub async fn resources_to_lua_values<'lua>(
-    lua: &'lua Lua,
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum SingleOrList {
+    Single(Option<DynamicObject>),
+    List(Vec<DynamicObject>),
+}
+
+pub async fn fetch_resources(
     kube_client: kube::Client,
     resources: &[CronPolicyResource],
-) -> Result<Vec<Value<'lua>>> {
+) -> Result<Vec<SingleOrList>> {
     resources
         .iter()
         .map(|resource| {
             let kube_client = kube_client.clone();
-            let lua = &lua;
             async move {
                 let (group, version) =
                     get_group_version_from_resource(resource, kube_client.clone()).await?;
@@ -80,12 +85,12 @@ pub async fn resources_to_lua_values<'lua>(
                     Api::<DynamicObject>::all_with(kube_client.clone(), &ar)
                 };
 
-                if let Some(name) = &resource.name {
+                let value = if let Some(name) = &resource.name {
                     let object = api
                         .get_opt(name)
                         .await
                         .context("failed to get Kubernetes object")?;
-                    lua_to_value(lua, &object).context("failed to convert object to Lua value")
+                    SingleOrList::Single(object)
                 } else {
                     let lp = if let Some(lp) = &resource.list_params {
                         ListParams {
@@ -101,14 +106,26 @@ pub async fn resources_to_lua_values<'lua>(
                         .await
                         .context("failed to list Kubernetes objects")?
                         .items;
-                    lua_to_value(lua, &objects).context("failed to convert objects into Lua value")
-                }
+                    SingleOrList::List(objects)
+                };
+                Result::<_, anyhow::Error>::Ok(value)
             }
         })
         .collect::<FuturesOrdered<_>>()
         .try_collect()
         .err_into()
         .await
+}
+
+pub fn prepare_js_runtime(resources: Vec<SingleOrList>) -> Result<JsRuntime> {
+    let mut js_runtime = crate::js::prepare_js_runtime(vec![])?;
+
+    set_context(&mut js_runtime, "resources", &resources)?;
+
+    // Prepare context
+    js_runtime.execute_script_static("<checkpoint>", include_str!("checker/runtime.js"))?;
+
+    Ok(js_runtime)
 }
 
 pub async fn notify(
