@@ -40,9 +40,14 @@ spec:
     namespace: default
     name: checkpoint-validatingrule-block-namespace-creation-when-block-namespace-exists
   code: |
-    blockNamespace = kubeGet({group="", version="v1", kind="Namespace", name="block"})
-    if blockNamespace == nil then
-      return
-    else
-      return "Namespace creation blocked"
-    end
+    const blockNamespace = kubeGet({
+      group: "",
+      version: "v1",
+      kind: "Namespace",
+      name: "block",
+    });
+    if (blockNamespace == null) {
+      allow();
+    } else {
+      deny("Namespace creation blocked");
+    }

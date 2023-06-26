@@ -9,11 +9,10 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
-    request = ...
-    name = request.object.metadata.name
-    if not startsWith(name, "owo-") then
-      return "That name is not cute."
-    end
-    if not endsWith(name, "-uwu") then
-      return nil, {{op="replace", path="/metadata/name", value=name .. "-uwu"}}
-    end
+    const request = getRequest();
+    const name = request.object.metadata.name;
+    if (!name.startsWith("owo-")) {
+      deny("That name is not cute.");
+    } else if (!name.endsWith("-uwu")) {
+      allowAndMutate([{op: "replace", path: "/metadata/name", value: `${name}-uwu`}]);
+    }

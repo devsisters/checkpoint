@@ -40,15 +40,15 @@ spec:
     namespace: default
     name: checkpoint-validatingrule-namespace-must-have-unique-annotation
   code: |
-    request = ...
-    requestedNamespaceUniqueAnnotation = (request.object.metadata.annotations or {})["unique"]
+    const request = getRequest();
+    const requestedNamespaceUniqueAnnotation = request.object.metadata.annotations?.unique;
 
-    namespaces = kubeList({group="", version="v1", kind="Namespace"}).items
+    const namespaces = kubeList({group: "", version: "v1", kind: "Namespace"}).items;
 
-    for _, namespace in namespaces do
-      uniqueAnnotation = (namespace.metadata.annotations or {})["unique"]
+    for (const namespace of namespaces) {
+      const uniqueAnnotation = namespace.metadata.annotations?.unique;
 
-      if uniqueAnnotation ~= nil and requestedNamespaceUniqueAnnotation == uniqueAnnotation then
-        return "Requested namespace has a not unique `unique` annotation"
-      end
-    end
+      if (uniqueAnnotation != null && requestedNamespaceUniqueAnnotation === uniqueAnnotation) {
+        deny("Requested namespace has a not unique `unique` annotation");
+      }
+    }

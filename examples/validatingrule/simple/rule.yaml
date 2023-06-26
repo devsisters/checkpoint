@@ -9,7 +9,7 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
-    request = ...
-    if not endsWith(request.name, "-uwu") then
-      return "That name is not cute."
-    end
+    const request = getRequest();
+    if (!request.name.endsWith("-uwu")) {
+      deny("That name is not cute.");
+    }

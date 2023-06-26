@@ -9,10 +9,11 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
-    request = ...
-    if request.object.metadata.name:sub(-4) ~= "-uwu" then
-      newObject = deepCopy(request.object)
-      newObject.metadata.name = request.object.metadata.name .. "-uwu"
-      patch = jsonPatchDiff(request.object, newObject)
-      return nil, patch
-    end
+    const request = getRequest();
+    const name = request.object.metadata.name;
+    if (!name.endsWith("-uwu")) {
+      const newObject = jsonClone(request.object);
+      newObject.metadata.name = `${name}-uwu`;
+      const patch = jsonPatchDiff(request.object, newObject);
+      allowAndMutate(patch);
+    }
