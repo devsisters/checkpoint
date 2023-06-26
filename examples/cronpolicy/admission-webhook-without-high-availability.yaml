@@ -10,74 +10,75 @@ spec:
   - kind: MutatingWebhookConfiguration
   - kind: Endpoints
   code: |
-    excludeWebhookConfigurations = {
-      someName=true,
+    // Config
+    const excludeWebhookConfigurations = {
+      someName: true,
+    };
+
+    function checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables) {
+      if (excludeWebhookConfigurations[webhookConfiguration.metadata.name]) {
+        return;
+      }
+      for (const webhook of webhookConfiguration.webhooks) {
+        const service = webhook.clientConfig.service;
+        if (service == null) {
+          continue;
+        }
+        const namespace = service.namespace;
+        const name = service.name;
+
+        const endpoint = endpointTable[`${namespace}/${name}`];
+        if (endpoint == null) {
+          continue
+        }
+
+        const subsets = endpoint.subsets;
+        if (subsets == null) {
+          vulnerables.push(webhookConfiguration);
+          return
+        }
+
+        const addresses = {};
+        let addressesCount = 0;
+        for (const subset of subsets) {
+          for (const address of subset.addresses) {
+            const addressJsonString = JSON.stringify(address);
+            if (addresses[addressJsonString] == null) {
+              addresses[addressJsonString] = true;
+              addressesCount += 1;
+            }
+          }
+        }
+
+        if (addressesCount <= 1) {
+          vulnerables.push(webhookConfiguration);
+        }
+      }
     }
 
-    function checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables)
-      if excludeWebhookConfigurations[webhookConfiguration["metadata"]["name"]] then
-        return
-      end
-      for _, webhook in webhookConfiguration["webhooks"] do
-        service = webhook["clientConfig"]["service"]
-        if not service then
-          continue
-        end
-        namespace = service["namespace"]
-        name = service["name"]
+    const [validatingwebhookconfigurations, mutatingwebhookconfigurations, endpoints] = getResources();
 
-        endpoint = endpointTable[namespace .. "/" .. name]
-        if endpoint == nil then
-          continue
-        end
+    const endpointTable = {};
+    for (const endpoint of endpoints) {
+      endpointTable[`${endpoint.metadata.namespace}/${endpoint.metadata.name}`] = endpoint;
+    }
 
-        subsets = endpoint["subsets"]
-        if subsets == nil then
-          table.insert(vulnerables, webhookConfiguration)
-          return
-        end
+    const vulnerables = [];
 
-        addresses = {}
-        addressesCount = 0
-        for _, subset in subsets do
-          for _, address in subset["addresses"] do
-            addressJsonString = toJsonString(address)
-            if not addresses[addressJsonString] then
-              addresses[addressJsonString] = true
-              addressesCount += 1
-            end
-          end
-        end
+    for (const webhookConfiguration of validatingwebhookconfigurations) {
+      checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables);
+    }
+    for (const webhookConfiguration of mutatingwebhookconfigurations) {
+      checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables);
+    }
 
-        if addressesCount <= 1 then
-          table.insert(vulnerables, webhookConfiguration)
-        end
-      end
-    end
-
-    validatingwebhookconfigurations, mutatingwebhookconfigurations, endpoints = ...
-
-    endpointTable = {}
-    for _, endpoint in endpoints do
-      endpointTable[endpoint["metadata"]["namespace"] .. "/" .. endpoint["metadata"]["name"]] = endpoint
-    end
-
-    vulnerables = {}
-
-    for _, webhookConfiguration in validatingwebhookconfigurations do
-      checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables)
-    end
-    for _, webhookConfiguration in mutatingwebhookconfigurations do
-      checkWebhookConfiguration(webhookConfiguration, endpointTable, vulnerables)
-    end
-
-    if #vulnerables > 0 then
-      names = ""
-      for _, webhookConfigurations in vulnerables do
-        names ..= "- `" .. webhookConfigurations["metadata"]["name"] .. "`\n"
-      end
-      return {names=names}
-    end
+    if (vulnerables.length > 0) {
+      let names = "";
+      for (const webhookConfigurations of vulnerables) {
+        names += `- \`${webhookConfigurations.metadata.name}\`\n`;
+      }
+      setOutput({names});
+    }
   notifications:
     slack:
       webhookUrl: "https://example.com"

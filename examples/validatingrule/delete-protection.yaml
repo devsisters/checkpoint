@@ -21,20 +21,20 @@ spec:
     operations: ["DELETE"]
     scope: "Namespaced"
   code: |
-    -- Config
-    annotationKey = "delete-allow"
-    annotationValue = "true"
+    // Config
+    const annotationKey = "delete-allow";
+    const annotationValue = "true";
 
-    request = ...
-    annotation = (request.oldObject.metadata.annotations or {})[annotationKey]
-    if annotation ~= nil then
-      if annotationValue == "" then
-        return
-      elseif annotation == annotationValue then
-        return
-      else
-        return "resource " .. request.name .. ": key exists but value mismatch: expected `" .. annotationValue .. "`, got `" .. annotation .. "`"
-      end
-    else
-      return "resource " .. request.name .. ": does not contain annotation `" .. annotationKey .. "` with value `" .. annotationValue .. "`"
-    end
+    const request = getRequest();
+    const annotation = (request.oldObject.metadata.annotations ?? {})[annotationKey];
+    if (annotation != null) {
+      if (annotationValue === "") {
+        allow();
+      } else if (annotation === annotationValue) {
+        allow();
+      } else {
+        deny(`resource ${request.name}: key exists but value mismatch: expected \`${annotationValue}\`, got \`${annotation}\``);
+      }
+    } else {
+      deny(`resource ${request.name}: does not contain annotation \`${annotationKey}\` with value \`${annotationValue}\``);
+    }

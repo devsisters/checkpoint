@@ -10,8 +10,8 @@ spec:
     operations: ["CREATE"]
     scope: "Namespaced"
   code: |
-    request = ...
+    const request = getRequest();
 
-    if request.namespace == "default" then
-      return "\"default\" namespace is not allowed"
-    end
+    if (request.namespace === "default") {
+      deny("`default` namespace is not allowed");
+    }

@@ -9,56 +9,49 @@ spec:
     resources: ["pods"]
     operations: ["CREATE"]
   code: |
-    -- Config
-    allowedRegistries = {"docker.io", "k8s.gcr.io"}
+    // Config
+    const allowedRegistries = ["docker.io", "k8s.gcr.io"];
 
-    -- Check image of containers, returns nil if validation was passed
-    function checkContainers(containers)
-      local container
-      for _, container in pairs(containers) do
-        local registry = getRegistry(container.image)
-        if not contains(allowedRegistries, registry) then
-          return "Image registry `" .. registry .. "` is not in the white list"
-        end
-      end
-    end
+    // Check image of containers, returns nil if validation was passed
+    function checkContainers(containers) {
+      for (const container of containers) {
+        const registry = getRegistry(container.image);
+        if (!allowedRegistries.includes(registry)) {
+          return `Image registry \`${registry}\` is not in the white list`;
+        }
+      }
+    }
 
-    -- Get registry from image path
-    function getRegistry(image)
-      local _, index = string.find(image, "/")
-      if index == nil then
-        return "docker.io"
-      else
-        local prefix = string.sub(image, 1, index - 1)
-        if string.find(prefix, ".", 1, true) == nil then  -- if `prefix` is username in docker hub
-          return "docker.io"
-        else
-          return prefix
-        end
-      end
-    end
- 
-    -- Check if `array` contains `value`
-    function contains(array, value)
-      local element
-      for _, element in pairs(array) do
-        if element == value then
-          return true
-        end
-      end
-      return false
-    end
- 
+    // Get registry from image path
+    function getRegistry(image) {
+      const index = image.indexOf("/");
+      if (index === -1) {
+        return "docker.io";
+      } else {
+        const prefix = image.slice(0, index);
+        if (!prefix.includes(".")) { // if `prefix` is username in docker hub
+          return "docker.io";
+        } else {
+          return prefix;
+        }
+      }
+    }
 
-    request = ...
-    if request.object.spec.initContainers ~= nil then
-      result = checkContainers(request.object.spec.initContainers)
-      if result ~= nil then
-        return result
-      end
-    end
+    function main(request) {
+      if (request.object.spec.initContainers != null) {
+        const result = checkContainers(request.object.spec.initContainers);
+        if (result != null) {
+          deny(result);
+          return;
+        }
+      }
 
-    result = checkContainers(request.object.spec.containers)
-    if result ~= nil then
-      return result
-    end
+      const result = checkContainers(request.object.spec.containers);
+      if (result != null) {
+        deny(result);
+        return;
+      }
+    }
+
+    const request = getRequest();
+    main(request);
