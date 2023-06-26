@@ -25,7 +25,7 @@ spec:
           spec:
             properties:
               code:
-                description: Lua code to evaluate when validating request.
+                description: JS code to evaluate when validating request.
                 type: string
               failurePolicy:
                 description: |-
@@ -148,9 +148,9 @@ spec:
                 type: object
               serviceAccount:
                 description: |-
-                  The name of ServiceAccount to use to run Lua code.
+                  The name of ServiceAccount to use to run JS code.
 
-                  If you want to use `kubeGet` or `kubeList` function in Lua code, you must provide ServiceAccount info with this field.
+                  If you want to use `kubeGet` or `kubeList` function in JS code, you must provide ServiceAccount info with this field.
                 nullable: true
                 properties:
                   name:
@@ -211,7 +211,7 @@ spec:
           spec:
             properties:
               code:
-                description: Lua code to evaluate when validating request.
+                description: JS code to evaluate when validating request.
                 type: string
               failurePolicy:
                 description: |-
@@ -334,9 +334,9 @@ spec:
                 type: object
               serviceAccount:
                 description: |-
-                  The name of ServiceAccount to use to run Lua code.
+                  The name of ServiceAccount to use to run JS code.
 
-                  If you want to use `kubeGet` or `kubeList` function in Lua code, you must provide ServiceAccount info with this field.
+                  If you want to use `kubeGet` or `kubeList` function in JS code, you must provide ServiceAccount info with this field.
                 nullable: true
                 properties:
                   name:
@@ -395,10 +395,10 @@ spec:
         description: Auto-generated derived type for CronPolicySpec via `CustomResource`
         properties:
           spec:
-            description: CronPolicies check the specified resources with the provided Lua code periodically.
+            description: CronPolicies check the specified resources with the provided JS code periodically.
             properties:
               code:
-                description: Lua code to evaluate on the resources.
+                description: JS code to evaluate on the resources.
                 type: string
               namespace:
                 default: default
