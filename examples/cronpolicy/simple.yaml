@@ -1,0 +1,44 @@
+apiVersion: checkpoint.devsisters.com/v1
+kind: CronPolicy
+metadata:
+  name: cute-namespace-detected
+spec:
+  suspend: false
+  schedule: "* * * * *"
+  resources:
+  - kind: Namespace
+  code: |
+    const [namespaces] = getResources();
+    let names = "";
+    for (const namespace of namespaces) {
+      if (namespace.metadata.name.endsWith("-uwu")) {
+        names += `- \`${namespace.metadata.name}\`\n`;
+      }
+    }
+    if (names !== "") {
+      setOutput({names});
+    }
+  notifications:
+    slack:
+      webhookUrl: "https://example.com"
+      message: |
+        `{policy.name}` *is firing*
+        Following namespaces have cute name:
+        {output.names}
+    webhook:
+      url: "https://example.com"
+      method: POST
+      headers:
+        content-type: application/json
+      body: |
+        {{
+          "text": "{policy.name} is firing",
+          "blocks": [{{
+            "type": "section",
+            "text": {{
+              "type": "mrkdwn",
+              "text": "`{policy.name}` *is firing*\nFollowing namespaces have cute name:\n{output.names}"
+            }}
+          }}]
+        }}
+  restartPolicy: Never
