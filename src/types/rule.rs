@@ -60,12 +60,12 @@ pub struct RuleSpec {
     /// Default to 10 seconds.
     pub timeout_seconds: Option<i32>,
 
-    /// The name of ServiceAccount to use to run Lua code.
+    /// The name of ServiceAccount to use to run JS code.
     ///
-    /// If you want to use `kubeGet` or `kubeList` function in Lua code, you must provide ServiceAccount info with this field.
+    /// If you want to use `kubeGet` or `kubeList` function in JS code, you must provide ServiceAccount info with this field.
     pub service_account: Option<ServiceAccountInfo>,
 
-    /// Lua code to evaluate when validating request.
+    /// JS code to evaluate when validating request.
     pub code: String,
 }
 

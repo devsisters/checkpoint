@@ -9,12 +9,12 @@ spec:
     resources: ["roles", "clusterroles"]
     operations: ["CREATE", "UPDATE"]
   code: |
-    request = ...
+    const request = getRequest();
 
-    for _, rule in pairs(request.object.rules) do
-      for _, resource in pairs(rule.resources) do
-        if string.find(resource, "*", 1, true) ~= nil then
-          return "Role should not contain wildcard resource"
-        end
-      end
-    end
+    for (const rule of request.object.rules) {
+      for (const resource of rule.resources) {
+        if (resource.includes("*")) {
+          deny("Role should not contain wildcard resource");
+        }
+      }
+    }

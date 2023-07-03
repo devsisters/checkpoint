@@ -117,7 +117,7 @@ pub struct CronPolicyNotification {
     pub webhook: Option<CronPolicyNotificationWebhook>,
 }
 
-/// CronPolicies check the specified resources with the provided Lua code periodically.
+/// CronPolicies check the specified resources with the provided JS code periodically.
 #[derive(Serialize, Deserialize, JsonSchema, CustomResource, Clone, Debug)]
 #[kube(
     group = "checkpoint.devsisters.com",
@@ -136,7 +136,7 @@ pub struct CronPolicySpec {
 
     /// Specifier for the resources to check.
     pub resources: Vec<CronPolicyResource>,
-    /// Lua code to evaluate on the resources.
+    /// JS code to evaluate on the resources.
     pub code: String,
     /// Configurations of notifications to notify when policy check failed.
     pub notifications: CronPolicyNotification,

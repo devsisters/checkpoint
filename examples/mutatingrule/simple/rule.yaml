@@ -9,8 +9,8 @@ spec:
     resources: ["namespaces"]
     operations: ["CREATE"]
   code: |
-    request = ...
-    name = request.object.metadata.name
-    if not endsWith(name, "-uwu") then
-      return nil, {{op="replace", path="/metadata/name", value=name .. "-uwu"}}
-    end
+    const request = getRequest();
+    const name = request.object.metadata.name;
+    if (!name.endsWith("-uwu")) {
+      mutate([{op: "replace", path: "/metadata/name", value: `${name}-uwu`}]);
+    }

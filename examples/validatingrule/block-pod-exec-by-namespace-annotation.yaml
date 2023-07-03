@@ -40,9 +40,14 @@ spec:
     namespace: default
     name: checkpoint-validatingrule-block-pod-exec-by-namespace-annotation
   code: |
-    request = ...
-    namespace = kubeGet({group="", version="v1", kind="Namespace", name=request.namespace})
-    namespaceAnnotations = namespace.metadata.annotations or {}
-    if namespaceAnnotations["block-exec"] == "true" then
-      return "Pod exec is blocked in this namespace"
+    const request = getRequest();
+    const namespace = kubeGet({
+      group: "",
+      version: "v1",
+      kind: "Namespace",
+      name: request.namespace,
+    });
+    const namespaceAnnotations = namespace.metadata.annotations ?? {};
+    if namespaceAnnotations["block-exec"] === "true" then
+      deny("Pod exec is blocked in this namespace");
     end

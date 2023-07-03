@@ -1,37 +1,80 @@
-//! Lua helper functions for rules
+//! JS helper functions for rules
 
+use anyhow::Context;
+use deno_core::op;
+use k8s_openapi::api::authentication::v1::{TokenRequest, TokenRequestSpec};
 use kube::{
     api::ListParams,
-    core::{DynamicObject, GroupVersionKind},
+    config::AuthInfo,
+    core::{DynamicObject, GroupVersionKind, ObjectList},
     discovery::ApiResource,
     Api,
 };
-use mlua::{Lua, Value};
 use serde::Deserialize;
 
-use crate::lua::{lua_from_value, lua_to_value};
+use crate::types::rule::ServiceAccountInfo;
 
-use super::extract_kube_client_from_lua_ctx;
+deno_core::extension!(checkpoint_rule, ops = [ops_kube_get, ops_kube_list]);
 
-pub fn register_lua_helper_functions(lua: &Lua) -> Result<(), mlua::Error> {
-    let globals = lua.globals();
+/// Prepare Kubernetes client with specified ServiceAccount info in Rule spec
+async fn prepare_kube_client(
+    serviceaccount_info: Option<ServiceAccountInfo>,
+    timeout_seconds: Option<i32>,
+) -> anyhow::Result<kube::Client> {
+    // Fail if ServiceAccountInfo is not provided
+    let serviceaccount_info = serviceaccount_info.context(
+        "serviceAccount field is not provided. You should provide serviceAccount field in Rule spec if you want to use `kubeGet` or `kubeList` function in JS code.",
+    )?;
 
-    macro_rules! register_lua_function {
-        ($name:literal, $func:ident) => {
-            let f = lua.create_function($func)?;
-            globals.set($name, f)?;
-        };
-        ($name:literal, $func:ident, async) => {
-            let f = lua.create_async_function($func)?;
-            globals.set($name, f)?;
-        };
-    }
+    let client = kube::Client::try_default()
+        .await
+        .context("failed to prepare Kubernetes client")?;
 
-    // Register all Lua helper functions
-    register_lua_function!("kubeGet", kube_get, async);
-    register_lua_function!("kubeList", kube_list, async);
+    let sa_api = Api::namespaced(client, &serviceaccount_info.namespace);
 
-    Ok(())
+    // Retrieve token from ServiceAccount
+    let tr = sa_api
+        .create_token_request(
+            &serviceaccount_info.name,
+            &Default::default(),
+            &TokenRequest {
+                metadata: Default::default(),
+                spec: TokenRequestSpec {
+                    audiences: vec!["https://kubernetes.default.svc.cluster.local".to_string()],
+                    // expirationSeconds should greater than 10 minutes
+                    expiration_seconds: Some(std::cmp::max(
+                        timeout_seconds.unwrap_or(10 * 60).into(),
+                        10 * 60,
+                    )),
+                    ..Default::default()
+                },
+                status: None,
+            },
+        )
+        .await
+        .map_err(|error| {
+            if let kube::Error::Api(api_error) = &error {
+                if api_error.code == 404 {
+                    return anyhow::Error::new(error).context("ServiceAccount not found");
+                }
+            }
+            anyhow::Error::new(error).context("failed to request to Kubernetes")
+        })?;
+    let token = tr.status.context("failed to request ServiceAccount")?.token;
+
+    let mut kube_config =
+        kube::Config::incluster().context("failed to get Kubernetes in-cluster config")?;
+
+    // Set auth info with token
+    kube_config.auth_info = AuthInfo {
+        token: Some(secrecy::SecretString::new(token)),
+        ..Default::default()
+    };
+
+    let new_client = kube::Client::try_from(kube_config)
+        .context("failed to create restricted Kubernetes client")?;
+
+    Ok(new_client)
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
@@ -45,18 +88,20 @@ pub struct KubeGetArgument {
     pub name: String,
 }
 
-/// Lua helper function to get a Kubernetes resource
-async fn kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<Value<'lua>> {
-    // Unpack argument
-    let KubeGetArgument {
+/// JS helper function to get a Kubernetes resource
+#[op]
+async fn ops_kube_get(
+    serviceaccount_info: Option<ServiceAccountInfo>,
+    timeout_seconds: Option<i32>,
+    KubeGetArgument {
         group,
         version,
         kind,
         plural,
         namespace,
         name,
-    } = lua_from_value(lua, argument)?;
-
+    }: KubeGetArgument,
+) -> anyhow::Result<Option<DynamicObject>> {
     // Prepare GroupVersionKind and ApiResource from argument
     let gvk = GroupVersionKind::gvk(&group, &version, &kind);
     let ar = if let Some(plural) = plural {
@@ -65,7 +110,7 @@ async fn kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<V
         ApiResource::from_gvk(&gvk)
     };
 
-    let client = extract_kube_client_from_lua_ctx(lua)?;
+    let client = prepare_kube_client(serviceaccount_info, timeout_seconds).await?;
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
@@ -75,10 +120,12 @@ async fn kube_get<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<V
     };
 
     // Get object
-    let object = api.get_opt(&name).await.map_err(mlua::Error::external)?;
+    let object = api
+        .get_opt(&name)
+        .await
+        .context("failed to get from Kubernetes cluster")?;
 
-    // Serialize object into Lua value
-    lua_to_value(lua, &object)
+    Ok(object)
 }
 
 #[derive(Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
@@ -110,17 +157,21 @@ pub struct KubeListArgumentListParams {
     pub resource_version: Option<String>,
 }
 
-/// Lua helper function to list Kubernetes resources
-async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<Value<'lua>> {
-    // Unpack argument
-    let KubeListArgument {
+/// JS helper function to list Kubernetes resources
+#[op]
+async fn ops_kube_list(
+    serviceaccount_info: Option<ServiceAccountInfo>,
+    timeout_seconds: Option<i32>,
+    KubeListArgument {
         group,
         version,
         kind,
         plural,
         namespace,
         list_params,
-    } = lua_from_value(lua, argument)?;
+    }: KubeListArgument,
+) -> anyhow::Result<ObjectList<DynamicObject>> {
+    // Re-pack list params
     let list_params = list_params
         .map(
             |KubeListArgumentListParams {
@@ -156,7 +207,7 @@ async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<
         ApiResource::from_gvk(&gvk)
     };
 
-    let client = extract_kube_client_from_lua_ctx(lua)?;
+    let client = prepare_kube_client(serviceaccount_info, timeout_seconds).await?;
 
     // Prepare Kubernetes API with or without namespace
     let api = if let Some(namespace) = namespace {
@@ -169,8 +220,7 @@ async fn kube_list<'lua>(lua: &'lua Lua, argument: Value<'lua>) -> mlua::Result<
     let object_list = api
         .list(&list_params)
         .await
-        .map_err(mlua::Error::external)?;
+        .context("failed to list from Kubernetes cluster")?;
 
-    // Serialize object list into Lua value
-    lua_to_value(lua, &object_list)
+    Ok(object_list)
 }

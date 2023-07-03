@@ -9,20 +9,27 @@ spec:
     resources: ["jobs"]
     operations: ["CREATE"]
   code: |
-    -- Config
-    ttlSecondsAfterFinished = 600
+    // Config
+    const ttlSecondsAfterFinished = 600;
 
-    request = ...
-    -- Skip if ownerReference is specified
-    if request.object.metadata.owenerReferences ~= nil and #request.object.metadata.owenerReferences ~= 0 then
-      return
-    end
-    -- Skip if ttlSecondsAfterFinished is already specified
-    if request.object.spec.ttlSecondsAfterFinished ~= nil then
-      return
-    end
+    function main(request) {
+      // Skip if ownerReference is specified
+      const ownerReferences = request.object.metadata.ownerReferences;
+      if (ownerReferences != null && ownerReferences.length > 0) {
+        allow();
+        return;
+      }
+      // Skip if ttlSecondsAfterFinished is already specified
+      if (request.object.spec.ttlSecondsAfterFinished != null) {
+        allow();
+        return;
+      }
 
-    newObject = deepCopy(request.object)
-    newObject.spec.ttlSecondsAfterFinished = ttlSecondsAfterFinished
-    diff = jsonPatchDiff(request.object, newObject)
-    return nil, diff
+      const newObject = jsonCopy(request.object);
+      newObject.spec.ttlSecondsAfterFinished = ttlSecondsAfterFinished;
+      const diff = jsonPatchDiff(request.object, newObject);
+      allowAndMutate(diff);
+    }
+
+    const request = getRequest();
+    main(request);

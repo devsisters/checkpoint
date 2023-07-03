@@ -1,8 +1,8 @@
 mod internal;
-pub mod lua;
+pub mod js;
 
 use axum::{extract, http::StatusCode, response, routing, Router};
-use json_patch::{Patch, PatchOperation};
+use json_patch::Patch;
 use kube::{
     core::{
         admission::{AdmissionRequest, AdmissionResponse, AdmissionReview, SerializePatchError},
@@ -10,7 +10,8 @@ use kube::{
     },
     Api,
 };
-use mlua::{Lua, LuaSerdeExt};
+use serde::Deserialize;
+use tokio::task::JoinError;
 
 use crate::types::rule::{MutatingRule, RuleSpec, ValidatingRule};
 
@@ -39,34 +40,24 @@ pub fn create_app(kube_client: kube::Client) -> Router {
 pub enum Error {
     #[error("Rule is not found")]
     RuleNotFound,
-    #[error("Lua app data not found. This is a bug.")]
-    LuaAppDataNotFound,
-    #[error("serviceAccount field is not provided. You should provide serviceAccount field in Rule spec if you want to use `kubeGet` or `kubeList` function in Lua code.")]
-    ServiceAccountInfoNotProvided,
-    #[error("provided ServiceAccount is not found")]
-    ServiceAccountNotFound,
-    #[error("failed to request ServiceAccount token")]
-    RequestServiceAccountToken,
     #[error("Kubernetes error: {0}")]
     Kubernetes(#[source] kube::Error),
-    #[error("Kubernetes in-cluster config error: {0}")]
-    KubernetesInClusterConfig(#[source] kube::config::InClusterError),
     #[error("Kubernetes Kubeconfig error: {0}")]
     KubernetesKubeconfig(#[source] kube::config::KubeconfigError),
-    #[error("failed to prepare Lua context: {0}")]
-    PrepareLuaContext(#[source] mlua::Error),
-    #[error("failed to convert admission request to Lua value: {0}")]
-    ConvertAdmissionRequestToLuaValue(#[source] mlua::Error),
     #[error("failed to create Tokio runtime: {0}")]
-    CreateRuntime(#[source] std::io::Error),
-    #[error("failed to set name for Lua code: {0}")]
-    SetLuaCodeName(#[source] mlua::Error),
-    #[error("failed to execute Lua code: {0}")]
-    LuaEval(#[source] mlua::Error),
-    #[error("failed to receive from Lua thread: {0}")]
-    RecvLuaThread(#[source] tokio::sync::oneshot::error::RecvError),
+    CreateTokioRuntime(#[source] std::io::Error),
+    #[error("failed to receive from JavaScript thread: {0}")]
+    RecvJsThread(#[source] tokio::sync::oneshot::error::RecvError),
     #[error("failed to serialize Patch object: {0}")]
     SerializePatch(#[source] SerializePatchError),
+    #[error("failed to join JavaScript task: {0}")]
+    JoinJsTask(#[source] JoinError),
+    #[error("failed to prepare JavaScript runtime: {0}")]
+    PrepareJsRuntime(#[source] anyhow::Error),
+    #[error("failed to evaluate JavaScript code: {0}")]
+    EvalJs(#[source] anyhow::Error),
+    #[error("failed to deserialize JavaScript value: {0}")]
+    DeserializeJsValue(#[source] serde_v8::Error),
 }
 
 impl response::IntoResponse for Error {
@@ -81,6 +72,15 @@ impl response::IntoResponse for Error {
 
 async fn ping() -> &'static str {
     "ok"
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsOutput {
+    #[serde(default)]
+    deny_reason: Option<String>,
+    #[serde(default)]
+    patch: Option<Patch>,
 }
 
 /// Validate HTTP API handler
@@ -111,14 +111,7 @@ async fn validate_handler(
         .map_err(Error::Kubernetes)?
         .ok_or(Error::RuleNotFound)?;
 
-    let lua = lua::prepare_lua_ctx(
-        state.kube_client,
-        &vr.spec.0.service_account,
-        vr.spec.0.timeout_seconds,
-    )
-    .await?;
-
-    let resp = validate(&vr.spec.0, &req, lua).await;
+    let resp = validate(&vr.spec.0, &req, String::new()).await;
 
     // Log if error happens
     if let Err(error) = &resp {
@@ -132,17 +125,23 @@ async fn validate_handler(
 pub async fn validate(
     rule_spec: &RuleSpec,
     req: &AdmissionRequest<DynamicObject>,
-    lua: Lua,
+    js_context: String, // required for CLI
 ) -> Result<AdmissionResponse, Error> {
-    // Evaluate Lua code and get `deny_reason`
-    let deny_reason: Option<String> =
-        lua::eval_lua_code(lua, rule_spec.code.clone(), req.clone()).await?;
+    // Evaluate JS code
+    let output = js::eval_js_code(
+        rule_spec.service_account.clone(),
+        rule_spec.timeout_seconds,
+        rule_spec.code.clone(),
+        req.clone(),
+        js_context,
+    )
+    .await?;
 
     // Prepare AdmissionResponse from AddmissionRequest
     let resp: AdmissionResponse = req.into();
 
     // Set deny reason if exists
-    let resp = if let Some(deny_reason) = deny_reason {
+    let resp = if let Some(deny_reason) = output.deny_reason {
         resp.deny(deny_reason)
     } else {
         resp
@@ -178,14 +177,7 @@ async fn mutate_handler(
         .map_err(Error::Kubernetes)?
         .ok_or(Error::RuleNotFound)?;
 
-    let lua = lua::prepare_lua_ctx(
-        state.kube_client,
-        &mr.spec.0.service_account,
-        mr.spec.0.timeout_seconds,
-    )
-    .await?;
-
-    let resp = mutate(&mr.spec.0, &req, lua).await;
+    let resp = mutate(&mr.spec.0, &req, String::new()).await;
 
     // Log if error happens
     if let Err(error) = &resp {
@@ -195,38 +187,34 @@ async fn mutate_handler(
     Ok(response::Json(resp?.into_review()))
 }
 
-/// Wrapper to implement FromLua
-struct VecPatchOperation(Vec<PatchOperation>);
-
-impl<'lua> mlua::FromLua<'lua> for VecPatchOperation {
-    fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
-        let v = lua.from_value(lua_value)?;
-        Ok(Self(v))
-    }
-}
-
 /// Actual mutating function
 pub async fn mutate(
     rule_spec: &RuleSpec,
     req: &AdmissionRequest<DynamicObject>,
-    lua: Lua,
+    js_context: String, // required for CLI
 ) -> Result<AdmissionResponse, Error> {
-    // Evaluate Lua code and get `deny_reason` and `patch`
-    let (deny_reason, patch): (Option<String>, Option<VecPatchOperation>) =
-        lua::eval_lua_code(lua, rule_spec.code.clone(), req.clone()).await?;
+    // Evaluate JS code
+    let output = js::eval_js_code(
+        rule_spec.service_account.clone(),
+        rule_spec.timeout_seconds,
+        rule_spec.code.clone(),
+        req.clone(),
+        js_context,
+    )
+    .await?;
 
     // Prepare AdmissionResponse from AdmissionRequest
     let resp: AdmissionResponse = req.into();
 
     // Set deny reason if exists
-    let resp = if let Some(deny_reason) = deny_reason {
+    let resp = if let Some(deny_reason) = output.deny_reason {
         resp.deny(deny_reason)
     } else {
         resp
     };
 
     // Set patch if exists
-    let resp = if let Some(patch) = patch {
+    let resp = if let Some(patch) = output.patch {
         resp.with_patch(Patch(patch.0))
             .map_err(Error::SerializePatch)?
     } else {

@@ -10,11 +10,11 @@ mutatingRules:
       resources: ["namespaces"]
       operations: ["CREATE"]
     code: |
-      request = ...
-      name = request.object.metadata.name
-      if name:sub(-4) ~= "-uwu" then
-        return nil, {{op="replace", path="/metadata/name", value=name .. "-uwu"}}
-      end
+      const request = getRequest();
+      const name = request.object.metadata.name;
+      if (!name.endsWith("-uwu")) {
+        mutate([{op: "replace", path: "/metadata/name", value: `${name}-uwu`}]);
+      }
 - apiVersion: checkpoint.devsisters.com/v1
   kind: MutatingRule
   metadata:
@@ -26,11 +26,11 @@ mutatingRules:
       resources: ["namespaces"]
       operations: ["CREATE"]
     code: |
-      request = ...
-      name = request.object.metadata.name
-      if name:sub(4) ~= "uwu-" then
-        return nil, {{op="replace", path="/metadata/name", value="uwu-" .. name}}
-      end
+      const request = getRequest();
+      const name = request.object.metadata.name;
+      if (!name.startsWith("uwu-")) {
+        mutate([{op: "replace", path: "/metadata/name", value: `uwu-${name}`}]);
+      }
 cases:
 - request:
     uid: 00000000-0000-0000-0000-000000000000
