@@ -89,7 +89,7 @@ namespace/my-namespace-uwu created
 
 ### CronPolicy
 
-CronPolicy checks the cluster periodically and notify to specified webhook (e.g. Slack) if check fails.
+CronPolicy checks the cluster periodically and notifies to specified webhook (e.g. Slack) if check fails.
 
 Write a CronPolicy:
 
