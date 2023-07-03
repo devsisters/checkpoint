@@ -6,15 +6,9 @@ spec:
   suspend: false
   schedule: "* * * * *"
   resources:
-  - group: admissionregistration.k8s.io  
-    version: v1
-    kind: ValidatingWebhookConfiguration
-  - group: admissionregistration.k8s.io  
-    version: v1
-    kind: MutatingWebhookConfiguration
-  - group: ""
-    version: v1
-    kind: Endpoint
+  - kind: ValidatingWebhookConfiguration
+  - kind: MutatingWebhookConfiguration
+  - kind: Endpoints
   code: |
     excludeWebhookConfigurations = {
       someName=true,

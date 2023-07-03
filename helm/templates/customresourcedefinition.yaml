@@ -464,7 +464,8 @@ spec:
                   description: Specifier for the resources to check.
                   properties:
                     group:
-                      description: API group the resources belong to.
+                      description: Optional API group the resources belong to. If omitted, checkpoint will try to find group with provided kind.
+                      nullable: true
                       type: string
                     kind:
                       description: Kind of the resources.
@@ -495,12 +496,11 @@ spec:
                       nullable: true
                       type: string
                     version:
-                      description: API version the resources belong to.
+                      description: Optional API version the resources belong to. If omitted, checkpoint will try to find latest version with provided kind.
+                      nullable: true
                       type: string
                   required:
-                  - group
                   - kind
-                  - version
                   type: object
                 type: array
               restartPolicy:

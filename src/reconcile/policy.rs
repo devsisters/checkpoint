@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use futures_util::{stream::FuturesUnordered, TryStreamExt};
 use k8s_openapi::{
     api::{
         batch::v1::{CronJob, CronJobSpec, JobSpec, JobTemplateSpec},
@@ -20,6 +21,7 @@ use kube::{
 use crate::{
     config::ControllerConfig,
     types::policy::{CronPolicy, CronPolicyResource, CronPolicySpec},
+    util::find_group_version_pairs_by_kind,
 };
 
 use super::ReconcilerContext;
@@ -44,6 +46,12 @@ pub enum Error {
     SerializeResources(#[source] serde_json::Error),
     #[error("Failed to serialize notifications (This is a bug): {0}")]
     SerializeNotifications(#[source] serde_json::Error),
+    #[error("Kubernetes error: {0}")]
+    Kubernetes(#[source] kube::Error),
+    #[error("Specifed kind (`{0}`) does not have matching group/versions")]
+    GroupVersionNotExists(String),
+    #[error("Specifed kind (`{0}`) has multiple matching group/versions")]
+    MultipleGroupVersion(String),
 }
 
 /// Set a label that indicates the object is owned by a CronPolicy
@@ -176,41 +184,68 @@ fn to_plural(word: &str) -> String {
     format!("{}s", word)
 }
 
-fn make_role_rules(resources: &[CronPolicyResource]) -> Vec<PolicyRule> {
+async fn make_role_rules(
+    resources: &[CronPolicyResource],
+    kube_client: kube::Client,
+) -> Result<Vec<PolicyRule>, Error> {
     resources
         .iter()
-        .map(|resource| PolicyRule {
-            api_groups: Some(vec![resource.group.clone()]),
-            resources: Some(vec![resource
-                .plural
-                .clone()
-                .unwrap_or_else(|| to_plural(&resource.kind.to_ascii_lowercase()))]),
-            verbs: vec![if resource.name.is_some() {
-                "get".to_string()
-            } else {
-                "list".to_string()
-            }],
-            resource_names: resource.name.clone().map(|name| vec![name]),
-            ..Default::default()
+        .map(|resource| {
+            let kube_client = kube_client.clone();
+            async move {
+                let group = if let Some(group) = &resource.group {
+                    group.clone()
+                } else {
+                    let gvs = find_group_version_pairs_by_kind(&resource.kind, true, kube_client)
+                        .await
+                        .map_err(Error::Kubernetes)?;
+                    if gvs.is_empty() {
+                        return Err(Error::GroupVersionNotExists(resource.kind.clone()));
+                    } else if gvs.len() > 1 {
+                        return Err(Error::MultipleGroupVersion(resource.kind.clone()));
+                    } else {
+                        let mut gvs = gvs;
+                        let gv = gvs.pop().unwrap();
+                        gv.0
+                    }
+                };
+                Ok(PolicyRule {
+                    api_groups: Some(vec![group]),
+                    resources: Some(vec![resource
+                        .plural
+                        .clone()
+                        .unwrap_or_else(|| to_plural(&resource.kind.to_ascii_lowercase()))]),
+                    verbs: vec![if resource.name.is_some() {
+                        "get".to_string()
+                    } else {
+                        "list".to_string()
+                    }],
+                    resource_names: resource.name.clone().map(|name| vec![name]),
+                    ..Default::default()
+                })
+            }
         })
-        .collect()
+        .collect::<FuturesUnordered<_>>()
+        .try_collect()
+        .await
 }
 
-fn make_clusterrole(
+async fn make_clusterrole(
     name: String,
     oref: OwnerReference,
     resources: &[CronPolicyResource],
-) -> ClusterRole {
-    ClusterRole {
+    kube_client: kube::Client,
+) -> Result<ClusterRole, Error> {
+    Ok(ClusterRole {
         metadata: ObjectMeta {
             name: Some(name.clone()),
             owner_references: Some(vec![oref]),
             labels: Some(make_labels(name)),
             ..Default::default()
         },
-        rules: Some(make_role_rules(resources)),
+        rules: Some(make_role_rules(resources, kube_client).await?),
         aggregation_rule: None,
-    }
+    })
 }
 
 fn make_clusterrolebinding(
@@ -239,13 +274,14 @@ fn make_clusterrolebinding(
     }
 }
 
-fn make_role(
+async fn make_role(
     name: String,
     oref: OwnerReference,
     target_namespace: String,
     resources: &[CronPolicyResource],
-) -> Role {
-    Role {
+    kube_client: kube::Client,
+) -> Result<Role, Error> {
+    Ok(Role {
         metadata: ObjectMeta {
             name: Some(name.clone()),
             namespace: Some(target_namespace),
@@ -253,8 +289,8 @@ fn make_role(
             labels: Some(make_labels(name)),
             ..Default::default()
         },
-        rules: Some(make_role_rules(resources)),
-    }
+        rules: Some(make_role_rules(resources, kube_client).await?),
+    })
 }
 
 fn make_rolebinding(
@@ -290,12 +326,13 @@ type RolesAndClusterRoles = (
     Option<(ClusterRole, ClusterRoleBinding)>,
 );
 
-fn make_roles_and_clusterroles(
+async fn make_roles_and_clusterroles(
     cp_name: String,
     cronjob_namespace: String,
     oref: OwnerReference,
     resources: &[CronPolicyResource],
-) -> RolesAndClusterRoles {
+    kube_client: kube::Client,
+) -> Result<RolesAndClusterRoles, Error> {
     let mut namespaced_resources = BTreeMap::<String, Vec<CronPolicyResource>>::new(); // namespace -> [resource] map
     let mut global_resources = Vec::<CronPolicyResource>::new();
     for resource in resources {
@@ -313,25 +350,41 @@ fn make_roles_and_clusterroles(
     let roles = namespaced_resources
         .into_iter()
         .map(|(namespace, resources)| {
-            let r = make_role(cp_name.clone(), oref.clone(), namespace.clone(), &resources);
-            let rb = make_rolebinding(
-                cp_name.clone(),
-                oref.clone(),
-                namespace,
-                cronjob_namespace.clone(),
-            );
-            (r, rb)
+            let cp_name = cp_name.clone();
+            let oref = oref.clone();
+            let cronjob_namespace = cronjob_namespace.clone();
+            let kube_client = kube_client.clone();
+            async move {
+                let r = make_role(
+                    cp_name.clone(),
+                    oref.clone(),
+                    namespace.clone(),
+                    &resources,
+                    kube_client,
+                )
+                .await?;
+                let rb = make_rolebinding(cp_name, oref, namespace, cronjob_namespace);
+                Ok((r, rb))
+            }
         })
-        .collect();
+        .collect::<FuturesUnordered<_>>()
+        .try_collect()
+        .await?;
     let clusterrole = if !global_resources.is_empty() {
-        let cr = make_clusterrole(cp_name.clone(), oref.clone(), &global_resources);
+        let cr = make_clusterrole(
+            cp_name.clone(),
+            oref.clone(),
+            &global_resources,
+            kube_client,
+        )
+        .await?;
         let crb = make_clusterrolebinding(cp_name, oref, cronjob_namespace);
         Some((cr, crb))
     } else {
         None
     };
 
-    (roles, clusterrole)
+    Ok((roles, clusterrole))
 }
 
 pub async fn reconcile_cronpolicy(
@@ -367,7 +420,9 @@ pub async fn reconcile_cronpolicy(
         cronjob_namespace.clone(),
         oref.clone(),
         &cp.spec.resources,
-    );
+        client.clone(),
+    )
+    .await?;
     for (r, rb) in roles {
         let r_api = Api::<Role>::namespaced(client.clone(), &r.namespace().unwrap());
         let rb_api = Api::<RoleBinding>::namespaced(client.clone(), &rb.namespace().unwrap());
@@ -406,8 +461,24 @@ pub async fn reconcile_cronpolicy(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_make_roles_and_clusterroles() {
+    #[tokio::test]
+    async fn test_make_roles_and_clusterroles() {
+        // Mock Kubernetes client
+        // This client will not work
+        let kube_config = kube::Config {
+            cluster_url: "https://localhost:443".parse().unwrap(),
+            default_namespace: "default".to_string(),
+            root_cert: None,
+            connect_timeout: None,
+            read_timeout: None,
+            write_timeout: None,
+            accept_invalid_certs: true,
+            auth_info: Default::default(),
+            proxy_url: None,
+            tls_server_name: None,
+        };
+        let kube_client: kube::Client = kube_config.try_into().unwrap();
+
         let cp_name = "cron-policy-name".to_string();
         let cronjob_namespace = "cron-policy-namespace".to_string();
         let oref = OwnerReference::default();
@@ -418,7 +489,10 @@ mod tests {
             cronjob_namespace.clone(),
             oref.clone(),
             &resources,
-        );
+            kube_client.clone(),
+        )
+        .await
+        .unwrap();
         assert_eq!(roles, Vec::new());
         assert_eq!(clusterrole, None);
 
@@ -426,8 +500,8 @@ mod tests {
         let other_namespace = "other-namespace".to_string();
         let resources = vec![
             CronPolicyResource {
-                group: "".to_string(),
-                version: "v1".to_string(),
+                group: Some("".to_string()),
+                version: Some("v1".to_string()),
                 kind: "Namespace".to_string(),
                 plural: None,
                 namespace: None,
@@ -435,8 +509,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "".to_string(),
-                version: "v1".to_string(),
+                group: Some("".to_string()),
+                version: Some("v1".to_string()),
                 kind: "Pod".to_string(),
                 plural: None,
                 namespace: Some(some_namespace.clone()),
@@ -444,8 +518,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "apps".to_string(),
-                version: "v1".to_string(),
+                group: Some("apps".to_string()),
+                version: Some("v1".to_string()),
                 kind: "Deployment".to_string(),
                 plural: None,
                 namespace: None,
@@ -453,8 +527,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "apps".to_string(),
-                version: "v1".to_string(),
+                group: Some("apps".to_string()),
+                version: Some("v1".to_string()),
                 kind: "StatefulSet".to_string(),
                 plural: None,
                 namespace: Some(some_namespace.clone()),
@@ -462,8 +536,8 @@ mod tests {
                 list_params: None,
             },
             CronPolicyResource {
-                group: "apps".to_string(),
-                version: "v1".to_string(),
+                group: Some("apps".to_string()),
+                version: Some("v1".to_string()),
                 kind: "DaemonSet".to_string(),
                 plural: None,
                 namespace: Some(other_namespace.clone()),
@@ -472,8 +546,15 @@ mod tests {
             },
         ];
 
-        let (roles, clusterrole) =
-            make_roles_and_clusterroles(cp_name.clone(), cronjob_namespace, oref, &resources);
+        let (roles, clusterrole) = make_roles_and_clusterroles(
+            cp_name.clone(),
+            cronjob_namespace,
+            oref,
+            &resources,
+            kube_client,
+        )
+        .await
+        .unwrap();
         assert_eq!(roles.len(), 2);
         let role = &roles[0].0;
         assert_eq!(role.name_any(), cp_name);

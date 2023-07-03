@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "checkpoint.fullname" . }}
+  labels:
+    {{- include "checkpoint.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "checkpoint.fullname" .) }}
+webhooks:
+- name: cronpolicies.mutate.internal.checkpoint.devsisters.com
+  rules:
+  - apiGroups: ["checkpoint.devsisters.com"]
+    apiVersions: ["v1"]
+    resources: ["cronpolicies"]
+    scope: "*"
+    operations: ["CREATE", "UPDATE"]
+  clientConfig:
+    service:
+      namespace: {{ .Release.Namespace }}
+      name: {{ include "checkpoint.fullname" . }}-webhook
+      path: /internal/mutate/cronpolicies
+      port: {{ .Values.webhook.service.port }}
+  timeoutSeconds: 5
+  sideEffects: None
+  admissionReviewVersions: ["v1"]
