@@ -14,4 +14,4 @@ jobs:
         toolchain: stable
     - uses: Swatinem/rust-cache@v2
     - name: Check crdgen diff
-      run: cargo run --bin crdgen | diff helm/templates/customresourcedefinition.yaml -
+      run: cargo run --bin crdgen | diff helm/templates/crds/customresourcedefinition.yaml -
