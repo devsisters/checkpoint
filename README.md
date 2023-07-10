@@ -15,6 +15,16 @@ We need to set up a HTTPS web server and its certificates.
 
 ## Usage
 
+### Helm
+
+```
+helm repo add devsisters https://charts.devsisters.io
+helm repo update
+helm install checkpoint devsisters/checkpoint --namespace checkpoint --create-namespace
+```
+
+## Example
+
 More examples can be found at [`examples/` folder](./examples).
 
 ### ValidatingRule
