@@ -1,4 +1,4 @@
-name: release
+name: release-image
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     - "v*"
 
 jobs:
-  build:
+  release-image:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Docker Buildx

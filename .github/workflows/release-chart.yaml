@@ -1,4 +1,4 @@
-name: release
+name: release-chart
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
     - "chart-v*"
 
 jobs:
-  build:
+  release-chart:
     runs-on: ubuntu-latest
     steps:
     - name: Configure AWS Credentials
