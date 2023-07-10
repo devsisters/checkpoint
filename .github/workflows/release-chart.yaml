@@ -16,11 +16,12 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     - uses: actions/checkout@v3
-    - name: Bulid and push Helm chart to S3
-      uses: WyriHaximus/github-action-helm3@v3
+    - uses: azure/setup-helm@v3
       with:
-        exec: |
-          helm plugin install https://github.com/hypnoglow/helm-s3.git
-          helm repo add devsisters s3://devsisters-public-helm-charts
-          helm package helm
-          helm s3 push *.tgz devsisters --relative
+         version: "3.12.1"
+    - name: Bulid and push Helm chart to S3
+      run: |
+        helm plugin install https://github.com/hypnoglow/helm-s3.git
+        helm repo add devsisters s3://devsisters-public-helm-charts
+        helm package helm
+        helm s3 push *.tgz devsisters --relative
