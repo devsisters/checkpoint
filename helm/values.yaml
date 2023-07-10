@@ -101,7 +101,7 @@ serviceAccount:
   # Annotations to add to the service account
   annotations: {}
 image:
-  repository: ghcr.io/devsisters/checkpoint
+  repository: "public.ecr.aws/devsisters/checkpoint"
   pullPolicy: ""
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
