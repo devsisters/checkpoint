@@ -1,7 +1,6 @@
 name: crdgen
 
 on:
-  push:
   pull_request:
 
 jobs:
