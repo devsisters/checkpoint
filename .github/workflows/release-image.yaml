@@ -2,12 +2,19 @@ name: release-image
 
 on:
   push:
-    tags:
-    - "v*"
+    branches:
+      - "add-multiarch"
 
 jobs:
-  release-image:
-    runs-on: ubuntu-latest
+  build-image:
+    strategy:
+      matrix:
+        config:
+          - arch: amd64
+            runs_on: shared-8cpu-x64
+          - arch: arm64
+            runs_on: shared-8cpu-arm64
+    runs-on: ${{ matrix.config.runs_on }}
     steps:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -27,9 +34,11 @@ jobs:
         images: |
           ${{ steps.ecr-login.outputs.registry }}/devsisters/checkpoint
         tags: |
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
+          type=sha,format=short,suffix=-${{ matrix.config.arch }}
+          type=sha,format=long,suffix=-${{ matrix.config.arch }}
+          type=semver,pattern={{version}},suffix=-${{ matrix.config.arch }}
+          type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.config.arch }}
+          type=semver,pattern={{major}},suffix=-${{ matrix.config.arch }}
         flavor:
           latest=auto
     - uses: actions/checkout@v3
@@ -37,9 +46,40 @@ jobs:
       uses: docker/build-push-action@v4
       with:
         context: .
-        push: true
+        push: false
         cache-to: type=gha,mode=max
         cache-from: type=gha,mode=max
         platforms: linux/amd64,linux/arm64
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+  build-manifest:
+    needs: [build-image]
+    runs-on: "shared-2cpu-arm64"
+    steps:
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            ${{ steps.ecr-login.outputs.registry }}/devsisters/checkpoint
+          tags: |
+            type=sha,format=short,suffix=-${{ matrix.config.arch }}
+            type=sha,format=long,suffix=-${{ matrix.config.arch }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          flavor:
+            latest=auto
+      - name: Login to AWS ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        id: ecr-login
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        with:
+          registry-type: public
+      - name: Create image manifest
+        run: |
+          echo ${{ steps.meta.outputs.tags }}
