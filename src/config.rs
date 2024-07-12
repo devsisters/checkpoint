@@ -8,7 +8,7 @@ use serde::{
 use crate::types::policy::{CronPolicyNotification, CronPolicyResource};
 
 fn default_listen_addr() -> String {
-    "0.0.0.0:3000".to_string()
+    "[::]:3000".to_string()
 }
 
 #[derive(Deserialize, Clone, Debug)]
